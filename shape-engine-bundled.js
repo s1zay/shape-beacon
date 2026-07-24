@@ -307,10 +307,3 @@ class ShapeEngine {
     }
     _clamp(val) { return Math.max(0, Math.min(1, isNaN(val) ? 0 : val)); }
 }
-
-// --- AUTO INITIALIZATION ---
-if (typeof window !== 'undefined') {
-    window.ShapeEngine = new ShapeEngine();
-    window.ShapeEngine.start();
-    window.ShapeEngine.initAutoSend('/api/engine', 'sizzlestats-reddit');
-}
