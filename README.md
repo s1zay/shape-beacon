@@ -1,12 +1,12 @@
 # shape-engine-sdk
-Test and deploy MVP
 
-Filter out low-value traffic before running expensive analytics.
+**Filter out low-value traffic before running expensive analytics.**
 
-Store one <1k byte fingerprint per session.
+ShapeEngine is a zero-dependency client-side SDK that calculates spatial and temporal behavioral metrics in the browser, replacing bloated event logs with deterministic math.
 
-Query behavior without replaying sessions.
+### Why use ShapeEngine?
 
-Run AI on summaries instead of raw telemetry.
-
-Keep raw events out of storage for better privacy.
+* **Shrink Payloads:** Store a single `< 1KB` fingerprint per session instead of megabytes of raw DOM events.
+* **Skip the Video:** Query user behavior directly without wasting time watching session replays.
+* **Slash Token Costs:** Run AI agents and LLMs on structured summaries instead of forcing models to parse raw telemetry.
+* **Privacy by Default:** Keep raw coordinate data, clicks, and keystrokes out of your database entirely.
