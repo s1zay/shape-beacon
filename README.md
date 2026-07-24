@@ -23,7 +23,7 @@ Initialize the engine with your Cloudflare Worker URL:
     engine.start();
     engine.initAutoSend('[https://your-worker.your-domain.workers.dev](https://your-worker.your-domain.workers.dev)', 'my-project');
 </script>
-
+```
 ### Example Output
 
 Every session is reduced to a compact behavioral summary that is typically **under 1 KB**.
@@ -58,6 +58,7 @@ Every session is reduced to a compact behavioral summary that is typically **und
 
   "dominant_shape": "drift"
 }
+```
 ```
 
 Instead of storing thousands of raw mouse movements, clicks, and DOM events, ShapeEngine stores a deterministic behavioral fingerprint that can be queried, filtered, aggregated, or fed directly into analytics and AI pipelines.
