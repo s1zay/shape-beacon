@@ -21,7 +21,7 @@ Initialize the engine with your Cloudflare Worker URL:
 <script>
     const engine = new ShapeEngine();
     engine.start();
-    engine.initAutoSend('[https://your-worker.your-domain.workers.dev](https://your-worker.your-domain.workers.dev)', 'my-project');
+    engine.initAutoSend('https://your-worker.your-domain.workers.dev', 'my-project');
 </script>
 ```
 ### Example Output
