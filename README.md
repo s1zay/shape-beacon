@@ -7,7 +7,7 @@ ShapeEngine is a zero-dependency client-side SDK that calculates spatial and tem
 ### Why use ShapeEngine?
 
 * **Shrink Payloads:** Store a single `< 1KB` fingerprint per session instead of megabytes of raw DOM events.
-* **Skip the Video:** Query user behavior directly without wasting time watching session replays.
+* **Skip the Replay:** Understand behavior without watching session recordings.
 * **Slash Token Costs:** Run AI agents and LLMs on structured summaries instead of forcing models to parse raw telemetry.
 * **Privacy by Default:** Keep raw coordinate data, clicks, and keystrokes out of your database entirely.
 
