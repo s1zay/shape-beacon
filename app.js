@@ -115,8 +115,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const shapes = Object.keys(shapesData);
         const values = Object.values(shapesData);
         
-        // Apple-style color palette for data
-        const colors = ['#34c759', '#ff9500', '#5ac8fa', '#ff3b30', '#8e8e93', '#af52de'];
+        // We now have 7 keys, so we add a 7th color (#0071e3) and reserve gray (#8e8e93) for undetermined
+        const colors = ['#34c759', '#ff9500', '#5ac8fa', '#ff3b30', '#af52de', '#0071e3', '#8e8e93'];
         
         const padding = 20;
         const availableHeight = height - (padding * 2);

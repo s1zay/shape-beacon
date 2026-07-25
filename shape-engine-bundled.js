@@ -61,7 +61,7 @@ const DEFAULT_TUNE = {
     "drift": [0.3, 0.4, 0.7, 0.6],
     "chaotic": [0.7, 0.3, 0.7, 0.2],
     "flat": [0.1, 0.1, 0.1, 0.6],
-    "undetermined": [0.5, 0.5, 0.5, 0.5]
+    "ambient": [0.5, 0.5, 0.5, 0.5] // Changed from undetermined to ambient
   }
 };
 
@@ -161,10 +161,11 @@ class ShapeEngine {
                 tuneVersion: this.tune.version,
                 eventCount: rawEvents.length,
                 sessionDurationMs: sessionDurationMs,
-                timeline: [], // Skip building timeline
+                timeline: [], 
                 foundations: { actionDensity: 0, burstVariance: 0, idleFraction: 0, pathEfficiency: 0, velocityVolatility: 0, directionalInflection: 0, modalitySwitching: 0 },
                 metrics: { intensity: 0, rhythm: 0, exploration: 0, coherence: 0 },
-                shapes: { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, undetermined: 1 },
+                // Schema now includes ambient as 0, and undetermined as 1
+                shapes: { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 1 }, 
                 events: [...rawEvents] 
             };
             return;
@@ -293,13 +294,16 @@ class ShapeEngine {
         let totalInvDist = 0, minHumanDist = Infinity;
         for (const [shape, ideal] of Object.entries(this.tune.shapes)) {
             const dist = Math.sqrt(Math.pow(metrics.intensity - ideal[0], 2) + Math.pow(metrics.rhythm - ideal[1], 2) + Math.pow(metrics.exploration - ideal[2], 2) + Math.pow(metrics.coherence - ideal[3], 2));
-            if (shape !== 'undetermined' && dist < minHumanDist) minHumanDist = dist;
+            // Ensure ambient behaves identically to how undetermined used to behave mathematically
+            if (shape !== 'ambient' && dist < minHumanDist) minHumanDist = dist;
             distances[shape] = 1 / (dist + 0.0001);
         }
         const OUTLIER_THRESHOLD = 0.7;
-        if (minHumanDist > OUTLIER_THRESHOLD && distances['undetermined']) distances['undetermined'] *= Math.pow(minHumanDist / OUTLIER_THRESHOLD, 6);
+        if (minHumanDist > OUTLIER_THRESHOLD && distances['ambient']) distances['ambient'] *= Math.pow(minHumanDist / OUTLIER_THRESHOLD, 6);
         for (const invDist of Object.values(distances)) totalInvDist += invDist;
-        const shapes = { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, undetermined: 0 };
+        
+        // Include BOTH ambient and undetermined so schemas match Gatekeeper structure
+        const shapes = { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 0 };
         if (totalInvDist > 0) {
             for (const shape in distances) if (shapes[shape] !== undefined) shapes[shape] = distances[shape] / totalInvDist;
         }
