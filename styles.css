@@ -47,7 +47,7 @@ body {
 
 /* Start Screen */
 #screen-start {
-    display: none; /* Handled by .active */
+    display: none;
 }
 #screen-start.active {
     display: flex;
@@ -205,7 +205,9 @@ body {
     box-shadow: var(--shadow);
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    /* FIX: Changed from hidden to auto so the panel can scroll if content is tall */
+    overflow-y: auto; 
+    overflow-x: hidden;
 }
 
 .panel-header {
@@ -214,6 +216,7 @@ body {
     margin-bottom: 24px;
     padding-bottom: 16px;
     border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
 }
 
 /* JSON Output Formatting */
@@ -221,8 +224,6 @@ body {
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
     font-size: 14px;
     line-height: 1.6;
-    overflow-y: auto;
-    flex-grow: 1;
     color: #333;
 }
 .json-key { color: #d05c44; font-weight: 600; }
@@ -235,6 +236,7 @@ body {
     width: 100%;
     aspect-ratio: 16/10;
     margin-bottom: 32px;
+    flex-shrink: 0;
 }
 
 canvas {
@@ -249,23 +251,7 @@ canvas {
     padding: 24px;
     margin-bottom: 32px;
     border: 1px solid var(--border);
+    flex-shrink: 0;
 }
 
 .stat-row {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 12px;
-    font-size: 15px;
-    font-weight: 500;
-}
-.stat-row:last-child { margin-bottom: 0; }
-.stat-value { font-family: monospace; font-size: 14px; }
-.stat-row.highlight { color: var(--accent); font-weight: 600; margin-top: 16px; border-top: 1px dashed var(--border); padding-top: 16px; }
-.stat-row.muted { color: var(--text-secondary); font-size: 13px; }
-
-.actions {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    margin-top: auto;
-}

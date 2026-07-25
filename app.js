@@ -22,8 +22,11 @@ document.addEventListener('DOMContentLoaded', () => {
         engine.analyze();
         const results = engine.getResults();
         
+        // FIX: Show the results screen FIRST so the Canvas container has physical dimensions!
+        ui.showResults(); 
+        
+        // Then process and draw the data
         processData(results);
-        ui.showResults();
     });
 
     // 3. User clicks Download
