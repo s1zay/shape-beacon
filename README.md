@@ -2,6 +2,11 @@
 
 **Filter out low-value traffic before running expensive analytics.**
 
+[Live Interactive Demo](https://s1zay.github.io/shape-engine-sdk/)
+
+ShapeEngine is a zero-dependency client-side SDK that calculates spatial and temporal behavioral metrics in the browser, replacing bloated event logs with deterministic math.
+
+
 ShapeEngine is a zero-dependency client-side SDK that calculates spatial and temporal behavioral metrics in the browser, replacing bloated event logs with deterministic math.
 
 ### Why use ShapeEngine?
