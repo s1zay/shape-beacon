@@ -7,7 +7,20 @@
 ShapeEngine is a zero-dependency client-side SDK that calculates spatial and temporal behavioral metrics in the browser, replacing bloated event logs with deterministic math.
 
 
-ShapeEngine is a zero-dependency client-side SDK that calculates spatial and temporal behavioral metrics in the browser, replacing bloated event logs with deterministic math.
+## Traditional Event Logging vs. ShapeEngine
+
+| Feature | Traditional Event Logging | ShapeEngine |
+|---------|--------------------------|-------------|
+| Data Size | Grows with every interaction | Typically **< 1 KB** per session |
+| Storage Growth | Proportional to event count | Nearly constant per session |
+| Raw Mouse Coordinates | Stored | Never stored |
+| Click History | Stored | Reduced to behavioral metrics |
+| AI Readiness | Requires preprocessing | Ready for AI and LLM workflows |
+| Privacy | Stores detailed user interactions | Stores behavioral summaries only |
+| Compute Cost | Analyze thousands of events | Analyze a compact fingerprint |
+| Long-Term Analytics | Heavy event aggregation | Query structured behavioral data |
+| Browser Processing | Large event streams | Deterministic behavioral summary |
+
 
 ### Why use ShapeEngine?
 
