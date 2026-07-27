@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ShapeEngine Demo</title>
     <link rel="stylesheet" href="styles.css">
+
+    <!-- 1. The Global CDN Link -->
+    <script src="https://shape-engine-sdk.anthonyyerhot.workers.dev/shape-engine-bundled.js"></script>
+
+    <!-- 2. The Direct Initialization -->
+    <script>
+        window.ShapeEngine.init({
+            endpoint: 'https://api.yourworker.workers.dev', // Replace with the Cloudflare Worker URL that catches your data
+            projectId: 'sizzlestats-demo'
+        });
+    </script>
 </head>
 <body>
 
