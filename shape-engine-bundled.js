@@ -61,7 +61,7 @@ const DEFAULT_TUNE = {
     "drift": [0.3, 0.4, 0.7, 0.6],
     "chaotic": [0.7, 0.3, 0.7, 0.2],
     "flat": [0.1, 0.1, 0.1, 0.6],
-    "ambient": [0.5, 0.5, 0.5, 0.5] // Changed from undetermined to ambient
+    "ambient": [0.5, 0.5, 0.5, 0.5] 
   }
 };
 
@@ -154,7 +154,6 @@ class ShapeEngine {
         const sessionDurationMs = Date.now() - this.sessionStart;
 
         // --- GATEKEEPER ---
-        // If session is < 1 second OR has < 20 events, bypass math and mark 100% undetermined
         if (sessionDurationMs < 1000 || rawEvents.length < 20) {
             this.state.results = {
                 engineVersion: this.version,
@@ -164,7 +163,6 @@ class ShapeEngine {
                 timeline: [], 
                 foundations: { actionDensity: 0, burstVariance: 0, idleFraction: 0, pathEfficiency: 0, velocityVolatility: 0, directionalInflection: 0, modalitySwitching: 0 },
                 metrics: { intensity: 0, rhythm: 0, exploration: 0, coherence: 0 },
-                // Schema now includes ambient as 0, and undetermined as 1
                 shapes: { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 1 }, 
                 events: [...rawEvents] 
             };
@@ -201,7 +199,7 @@ class ShapeEngine {
             url: window.location.href,
             timestamp: new Date().toISOString(),
             ...data
-        });
+        }, null, 2);
 
         const success = navigator.sendBeacon(this._workerUrl, payload);
         if (!success) {
@@ -294,7 +292,6 @@ class ShapeEngine {
         let totalInvDist = 0, minHumanDist = Infinity;
         for (const [shape, ideal] of Object.entries(this.tune.shapes)) {
             const dist = Math.sqrt(Math.pow(metrics.intensity - ideal[0], 2) + Math.pow(metrics.rhythm - ideal[1], 2) + Math.pow(metrics.exploration - ideal[2], 2) + Math.pow(metrics.coherence - ideal[3], 2));
-            // Ensure ambient behaves identically to how undetermined used to behave mathematically
             if (shape !== 'ambient' && dist < minHumanDist) minHumanDist = dist;
             distances[shape] = 1 / (dist + 0.0001);
         }
@@ -302,12 +299,21 @@ class ShapeEngine {
         if (minHumanDist > OUTLIER_THRESHOLD && distances['ambient']) distances['ambient'] *= Math.pow(minHumanDist / OUTLIER_THRESHOLD, 6);
         for (const invDist of Object.values(distances)) totalInvDist += invDist;
         
-        // Include BOTH ambient and undetermined so schemas match Gatekeeper structure
         const shapes = { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 0 };
         if (totalInvDist > 0) {
-            for (const shape in distances) if (shapes[shape] !== undefined) shapes[shape] = distances[shape] / totalInvDist;
+            for (const shape in distances) if (shapes[shape] !== undefined) shapes[shape] = this._clamp(distances[shape] / totalInvDist);
         }
         return shapes;
     }
-    _clamp(val) { return Math.max(0, Math.min(1, isNaN(val) ? 0 : val)); }
+    
+    _clamp(val) { 
+        const clamped = Math.max(0, Math.min(1, isNaN(val) ? 0 : val));
+        return Math.round(clamped * 10000) / 10000;
+    }
+}
+
+// --- AUTO INITIALIZATION ---
+if (typeof window !== 'undefined') {
+    window.ShapeEngine = new ShapeEngine();
+    // Do not auto-start in the demo UI.
 }

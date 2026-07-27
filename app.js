@@ -22,7 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
         engine.analyze();
         const results = engine.getResults();
         
-        // FIX: Show the results screen FIRST so the Canvas container has physical dimensions!
+        // Show the results screen FIRST so the Canvas container has physical dimensions!
         ui.showResults(); 
         
         // Then process and draw the data
@@ -80,7 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Helper: Deep copy and round numbers
     function deepRoundTo4Decimals(obj) {
         if (typeof obj === 'number') {
-            return Number(obj.toFixed(4));
+            return Number(Math.round(obj * 10000) / 10000);
         }
         if (Array.isArray(obj)) {
             return obj.map(deepRoundTo4Decimals);

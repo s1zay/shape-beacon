@@ -105,7 +105,6 @@ class UIController {
                 res += `<span class="json-key">"${key}"</span>: `;
                 
                 if (typeof val === 'number') {
-                    // It arrives already rounded by app.js logic, but format guarantees display
                     res += `<span class="json-num">${val}</span>${comma}`;
                 } else if (typeof val === 'string') {
                     res += `<span class="json-str">"${val}"</span>${comma}`;
