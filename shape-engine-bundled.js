@@ -1,6 +1,6 @@
 /**
- * ShapeEngine SDK v4.0 (Bundled for Sizzlestats)
- * Includes Tune v2.13, First-Party Routing, & Client Deduplication
+ * ShapeEngine SDK v4.1 (Bundled for Sizzlestats)
+ * Includes Tune v2.17, Configuration Init, & Client Deduplication
  */
 
 const DEFAULT_TUNE = {
@@ -122,11 +122,14 @@ class EventCollector {
 
 class ShapeEngine {
     constructor(tuneConfig = null) {
-        this.version = "4.0";
+        this.version = "4.1";
         this.tune = tuneConfig || DEFAULT_TUNE;
         this.collector = new EventCollector();
         this.sessionStart = Date.now();
         this.sessionId = this._generateId(); 
+        this.config = { endpoint: null, projectId: 'default' };
+        this._hasSetupTriggers = false;
+        this._hasSent = false;
         this.state = { status: 'offline', results: { timeline: [], foundations: {}, metrics: {}, shapes: {} } };
     }
     
@@ -135,6 +138,34 @@ class ShapeEngine {
         return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
             (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
         );
+    }
+
+    init(config = {}) {
+        if (config.endpoint) this.config.endpoint = config.endpoint;
+        if (config.projectId) this.config.projectId = config.projectId;
+
+        // Bind exit triggers strictly once
+        if (this.config.endpoint && !this._hasSetupTriggers) {
+            const handleExit = (event) => {
+                if (this._hasSent) return; 
+                if (document.visibilityState === 'hidden' || event.type === 'pagehide' || event.type === 'beforeunload') {
+                    this._hasSent = true;
+                    this.forceSend();
+                }
+            };
+            document.addEventListener('visibilitychange', handleExit);
+            window.addEventListener('pagehide', handleExit);
+            window.addEventListener('beforeunload', handleExit);
+            this._hasSetupTriggers = true;
+        }
+
+        // Start collection immediately to maintain the linear lifecycle
+        this.start();
+    }
+
+    // Legacy wrapper to ensure existing demo UI does not break
+    initAutoSend(workerUrl, projectId = 'default') {
+        this.init({ endpoint: workerUrl, projectId: projectId });
     }
 
     start() {
@@ -186,6 +217,8 @@ class ShapeEngine {
     getResults() { return this.state.results; }
 
     forceSend() {
+        if (!this.config.endpoint) return;
+
         this.analyze();
         const data = this.getResults();
         
@@ -195,34 +228,16 @@ class ShapeEngine {
         const payload = JSON.stringify({
             payloadSchema: "v1", 
             sessionId: this.sessionId, 
-            projectId: this._projectId || 'default',
+            projectId: this.config.projectId,
             url: window.location.href,
             timestamp: new Date().toISOString(),
             ...data
         }, null, 2);
 
-        const success = navigator.sendBeacon(this._workerUrl, payload);
+        const success = navigator.sendBeacon(this.config.endpoint, payload);
         if (!success) {
-            fetch(this._workerUrl, { method: 'POST', body: payload, keepalive: true }).catch(e => console.error(e));
+            fetch(this.config.endpoint, { method: 'POST', body: payload, keepalive: true }).catch(e => console.error(e));
         }
-    }
-
-    initAutoSend(workerUrl, projectId = 'default') {
-        this._workerUrl = workerUrl;
-        this._projectId = projectId;
-        this._hasSent = false;
-
-        const handleExit = (event) => {
-            if (this._hasSent) return; 
-            if (document.visibilityState === 'hidden' || event.type === 'pagehide' || event.type === 'beforeunload') {
-                this._hasSent = true;
-                this.forceSend();
-            }
-        };
-
-        document.addEventListener('visibilitychange', handleExit);
-        window.addEventListener('pagehide', handleExit);
-        window.addEventListener('beforeunload', handleExit);
     }
 
     _buildTimeline(events) { return events.map(ev => ({ ts: ev.ts, type: ev.type, x: ev.x !== undefined ? ev.x : null, y: ev.y !== undefined ? ev.y : null })).sort((a, b) => a.ts - b.ts); }
