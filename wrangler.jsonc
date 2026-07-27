@@ -1,5 +1,5 @@
 {
-  "name": "shape-engine-cdn",
+  "name": "shape-engine-sdk",
   "compatibility_date": "2026-07-27",
   "assets": {
     "directory": "./dist"
