@@ -127,7 +127,9 @@ class ShapeEngine {
         this.collector = new EventCollector();
         this.sessionStart = Date.now();
         this.sessionId = this._generateId(); 
-        this.config = { endpoint: null, projectId: 'default' };
+        
+        // UPDATED: Added apiKey to the config schema
+        this.config = { endpoint: null, projectId: 'default', apiKey: null };
         this._hasSetupTriggers = false;
         this._hasSent = false;
         this.state = { status: 'offline', results: { timeline: [], foundations: {}, metrics: {}, shapes: {} } };
@@ -143,6 +145,8 @@ class ShapeEngine {
     init(config = {}) {
         if (config.endpoint) this.config.endpoint = config.endpoint;
         if (config.projectId) this.config.projectId = config.projectId;
+        // UPDATED: Catch the apiKey from the window.ShapeEngine.init() call
+        if (config.apiKey) this.config.apiKey = config.apiKey;
 
         // Bind exit triggers strictly once
         if (this.config.endpoint && !this._hasSetupTriggers) {
@@ -225,10 +229,12 @@ class ShapeEngine {
         delete data.events;
         delete data.timeline;
 
+        // UPDATED: Pass apiKey into the JSON payload
         const payload = JSON.stringify({
             payloadSchema: "v1", 
             sessionId: this.sessionId, 
             projectId: this.config.projectId,
+            apiKey: this.config.apiKey, // <-- Now included!
             url: window.location.href,
             timestamp: new Date().toISOString(),
             ...data
