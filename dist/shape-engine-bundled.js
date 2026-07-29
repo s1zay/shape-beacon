@@ -1,6 +1,6 @@
 /**
- * ShapeEngine SDK v4.1 (Bundled for Sizzlestats)
- * Includes Tune v2.17, Configuration Init, & Client Deduplication
+ * ShapeEngine SDK v4.1.1 (Bundled for Sizzlestats)
+ * Includes Tune v2.17, Configuration Init, Client Deduplication, & Media Detection
  */
 
 const DEFAULT_TUNE = {
@@ -122,17 +122,16 @@ class EventCollector {
 
 class ShapeEngine {
     constructor(tuneConfig = null) {
-        this.version = "4.1";
+        this.version = "4.1.1"; // UPDATED VERSION
         this.tune = tuneConfig || DEFAULT_TUNE;
         this.collector = new EventCollector();
         this.sessionStart = Date.now();
         this.sessionId = this._generateId(); 
         
-        // UPDATED: Added apiKey to the config schema
         this.config = { endpoint: null, projectId: 'default', apiKey: null };
         this._hasSetupTriggers = false;
         this._hasSent = false;
-        this.state = { status: 'offline', results: { timeline: [], foundations: {}, metrics: {}, shapes: {} } };
+        this.state = { status: 'offline', results: { timeline: [], foundations: {}, metrics: {}, shapes: {}, device: 'unknown' } };
     }
     
     _generateId() {
@@ -145,7 +144,6 @@ class ShapeEngine {
     init(config = {}) {
         if (config.endpoint) this.config.endpoint = config.endpoint;
         if (config.projectId) this.config.projectId = config.projectId;
-        // UPDATED: Catch the apiKey from the window.ShapeEngine.init() call
         if (config.apiKey) this.config.apiKey = config.apiKey;
 
         // Bind exit triggers strictly once
@@ -188,6 +186,22 @@ class ShapeEngine {
         const rawEvents = this.collector.getRawEvents();
         const sessionDurationMs = Date.now() - this.sessionStart;
 
+        // --- NEW: MEDIA DETECTION ---
+        let hasTouch = false;
+        let hasMouse = false;
+
+        for (let i = 0; i < rawEvents.length; i++) {
+            const t = rawEvents[i].type;
+            if (t === 'touch_start' || t === 'touch_move') hasTouch = true;
+            if (t === 'mouse' || t === 'click') hasMouse = true;
+            if (hasTouch && hasMouse) break; // Optimization: Stop looping if both are found
+        }
+
+        let detectedDevice = 'unknown';
+        if (hasTouch && !hasMouse) detectedDevice = 'mobile';
+        else if (hasMouse && !hasTouch) detectedDevice = 'desktop';
+        else if (hasMouse && hasTouch) detectedDevice = 'hybrid';
+
         // --- GATEKEEPER ---
         if (sessionDurationMs < 1000 || rawEvents.length < 20) {
             this.state.results = {
@@ -195,6 +209,7 @@ class ShapeEngine {
                 tuneVersion: this.tune.version,
                 eventCount: rawEvents.length,
                 sessionDurationMs: sessionDurationMs,
+                device: detectedDevice, // Added to rejected payload
                 timeline: [], 
                 foundations: { actionDensity: 0, burstVariance: 0, idleFraction: 0, pathEfficiency: 0, velocityVolatility: 0, directionalInflection: 0, modalitySwitching: 0 },
                 metrics: { intensity: 0, rhythm: 0, exploration: 0, coherence: 0 },
@@ -214,6 +229,7 @@ class ShapeEngine {
             tuneVersion: this.tune.version,
             eventCount: rawEvents.length,
             sessionDurationMs: sessionDurationMs,
+            device: detectedDevice, // Added to successful payload
             timeline, foundations, metrics, shapes, events: [...rawEvents] 
         };
     }
@@ -229,12 +245,11 @@ class ShapeEngine {
         delete data.events;
         delete data.timeline;
 
-        // UPDATED: Pass apiKey into the JSON payload
         const payload = JSON.stringify({
             payloadSchema: "v1", 
             sessionId: this.sessionId, 
             projectId: this.config.projectId,
-            apiKey: this.config.apiKey, // <-- Now included!
+            apiKey: this.config.apiKey,
             url: window.location.href,
             timestamp: new Date().toISOString(),
             ...data
