@@ -1,80 +1,9 @@
-# shape-engine-sdk
-
-**Filter out low-value traffic before running expensive analytics.**
-
-[Live Interactive Demo](https://s1zay.github.io/shape-engine-sdk/)
-
-ShapeEngine is a zero-dependency client-side SDK that calculates spatial and temporal behavioral metrics in the browser, replacing bloated event logs with deterministic math.
-
-
-## Traditional Event Logging vs. ShapeEngine
-
-| Feature | Traditional Event Logging | ShapeEngine |
-|---------|--------------------------|-------------|
-| Data Size | Grows with every interaction | Typically **< 1 KB** per session |
-| Storage Growth | Proportional to event count | Nearly constant per session |
-| Raw Mouse Coordinates | Stored | Never stored |
-| Click History | Stored | Reduced to behavioral metrics |
-| AI Readiness | Requires preprocessing | Ready for AI and LLM workflows |
-| Privacy | Stores detailed user interactions | Stores behavioral summaries only |
-| Compute Cost | Analyze thousands of events | Analyze a compact fingerprint |
-| Long-Term Analytics | Heavy event aggregation | Query structured behavioral data |
-| Browser Processing | Large event streams | Deterministic behavioral summary |
-
-
 ### Why use ShapeEngine?
 
-* **Shrink Payloads:** Store a single `< 1KB` fingerprint per session instead of megabytes of raw DOM events.
-* **Skip the Replay:** Understand behavior without watching session recordings.
-* **Slash Token Costs:** Run AI agents and LLMs on structured summaries instead of forcing models to parse raw telemetry.
-* **Privacy by Default:** Keep raw coordinate data, clicks, and keystrokes out of your database entirely.
-
-
-### How to use.
-
-Initialize the engine with your Cloudflare Worker URL:
-
-```html
-<script src="shape-engine.js"></script>
-<script>
-    const engine = new ShapeEngine();
-    engine.start();
-    engine.initAutoSend('https://your-worker.your-domain.workers.dev', 'my-project');
-</script>
-```
-### Example Output
-
-Every session is reduced to a compact behavioral summary that is typically **under 1 KB**.
-
-```json
-{
-  "id": "1ae75c38-0fdd-41fa-acc9-d9539d63d725",
-  "project_id": "my-project",
-  "url": "https://example.com",
-  "timestamp": 1784907143900,
-  "session_duration_ms": 5084,
-  "event_count": 28,
-
-  "engine_version": "4.0",
-  "tune_version": "2.17",
-
-  "metrics": {
-    "intensity": 0.368,
-    "rhythm": 0.302,
-    "exploration": 0.573,
-    "coherence": 0.704
-  },
-
-  "shapes": {
-    "steady": 0.115,
-    "burst": 0.145,
-    "drift": 0.321,
-    "chaotic": 0.106,
-    "flat": 0.111,
-    "undetermined": 0.203
-  },
-
-  "dominant_shape": "drift"
-}
-```
-Instead of storing thousands of raw mouse movements, clicks, and DOM events, ShapeEngine stores a deterministic behavioral fingerprint that can be queried, filtered, aggregated, or fed directly into analytics and AI pipelines.
+* **Shrink Payloads:** Store a single `< 1 KB` behavioral fingerprint per session instead of megabytes of raw browser events.
+* **Filter the Noise:** Automatically classifies sessions under **1,000 ms** or **20 events** as **Undetermined**, keeping low-value traffic separate from meaningful behavioral analytics.
+* **Zero Runtime Overhead:** Collects interactions passively and performs analysis only when the page is hidden or unloaded, transmitting a compact fingerprint via `navigator.sendBeacon()`.
+* **Automatic Input Detection:** Identifies **Desktop**, **Mobile**, or **Hybrid** sessions using observed mouse and touch interactions—without user-agent parsing or external libraries.
+* **Skip the Replay:** Understand behavioral patterns without watching time-consuming session recordings.
+* **Reduce AI Costs:** Feed compact behavioral summaries to AI agents and LLMs instead of forcing them to parse raw telemetry.
+* **Privacy by Design:** Store deterministic behavioral summaries instead of raw coordinates, clicks, and keystrokes.
