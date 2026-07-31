@@ -1,6 +1,6 @@
 /**
- * ShapeEngine SDK v4.1.1 (Bundled for Sizzlestats)
- * Includes Tune v2.17, Configuration Init, Client Deduplication, & Media Detection
+ * ShapeEngine SDK v4.1.2 (Bundled for Sizzlestats)
+ * Includes Tune v2.17, Configuration Init, Client Deduplication, & Smart Media Detection
  */
 
 const DEFAULT_TUNE = {
@@ -122,7 +122,7 @@ class EventCollector {
 
 class ShapeEngine {
     constructor(tuneConfig = null) {
-        this.version = "4.1.1"; // UPDATED VERSION
+        this.version = "4.1.2"; // UPDATED VERSION
         this.tune = tuneConfig || DEFAULT_TUNE;
         this.collector = new EventCollector();
         this.sessionStart = Date.now();
@@ -186,21 +186,28 @@ class ShapeEngine {
         const rawEvents = this.collector.getRawEvents();
         const sessionDurationMs = Date.now() - this.sessionStart;
 
-        // --- NEW: MEDIA DETECTION ---
+        // --- NEW: SMART MEDIA DETECTION (v4.1.2) ---
         let hasTouch = false;
-        let hasMouse = false;
+        let mouseCount = 0;
+        let clickCount = 0;
 
         for (let i = 0; i < rawEvents.length; i++) {
             const t = rawEvents[i].type;
             if (t === 'touch_start' || t === 'touch_move') hasTouch = true;
-            if (t === 'mouse' || t === 'click') hasMouse = true;
-            if (hasTouch && hasMouse) break; // Optimization: Stop looping if both are found
+            else if (t === 'mouse') mouseCount++;
+            else if (t === 'click') clickCount++;
         }
 
         let detectedDevice = 'unknown';
-        if (hasTouch && !hasMouse) detectedDevice = 'mobile';
-        else if (hasMouse && !hasTouch) detectedDevice = 'desktop';
-        else if (hasMouse && hasTouch) detectedDevice = 'hybrid';
+        if (hasTouch) {
+            if (mouseCount > clickCount) {
+                detectedDevice = 'hybrid'; // True physical mouse overrides mobile defaults
+            } else {
+                detectedDevice = 'mobile'; // Ghost events (mouseCount == clickCount) fall back to mobile
+            }
+        } else if (mouseCount > 0 || clickCount > 0) {
+            detectedDevice = 'desktop';
+        }
 
         // --- GATEKEEPER ---
         if (sessionDurationMs < 1000 || rawEvents.length < 20) {
@@ -209,7 +216,7 @@ class ShapeEngine {
                 tuneVersion: this.tune.version,
                 eventCount: rawEvents.length,
                 sessionDurationMs: sessionDurationMs,
-                device: detectedDevice, // Added to rejected payload
+                device: detectedDevice,
                 timeline: [], 
                 foundations: { actionDensity: 0, burstVariance: 0, idleFraction: 0, pathEfficiency: 0, velocityVolatility: 0, directionalInflection: 0, modalitySwitching: 0 },
                 metrics: { intensity: 0, rhythm: 0, exploration: 0, coherence: 0 },
@@ -229,7 +236,7 @@ class ShapeEngine {
             tuneVersion: this.tune.version,
             eventCount: rawEvents.length,
             sessionDurationMs: sessionDurationMs,
-            device: detectedDevice, // Added to successful payload
+            device: detectedDevice, 
             timeline, foundations, metrics, shapes, events: [...rawEvents] 
         };
     }
