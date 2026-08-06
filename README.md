@@ -1,4 +1,5 @@
-### Why use Shape Engine?  [DEMO](https://s1zay.github.io/shape-engine-sdk/)
+### Why use Shape Engine?  
+##[DEMO](https://s1zay.github.io/shape-engine-sdk/)
 
 * **Shrink Payloads:** Store a single `< 1 KB` behavioral fingerprint per session instead of megabytes of raw browser events.
 * **Filter the Noise:** Automatically classifies sessions under **1,000 ms** or **20 events** as **Undetermined**, keeping low-value traffic separate from meaningful behavioral analytics.
