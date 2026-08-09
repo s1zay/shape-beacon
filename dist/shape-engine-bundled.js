@@ -1,6 +1,6 @@
 /**
- * ShapeEngine SDK v4.1.2 (Bundled for Sizzlestats)
- * Includes Tune v2.17, Configuration Init, Client Deduplication, & Smart Media Detection
+ * ShapeEngine SDK v4.1.3 (Bundled with Tune file)
+ * Includes Tune v2.17, Configuration Init, Client Deduplication, Smart Media Detection, & Tab-Switch Lifecycle
  */
 
 const DEFAULT_TUNE = {
@@ -122,7 +122,7 @@ class EventCollector {
 
 class ShapeEngine {
     constructor(tuneConfig = null) {
-        this.version = "4.1.2"; // UPDATED VERSION
+        this.version = "4.1.3"; // UPDATED VERSION
         this.tune = tuneConfig || DEFAULT_TUNE;
         this.collector = new EventCollector();
         this.sessionStart = Date.now();
@@ -148,16 +148,19 @@ class ShapeEngine {
 
         // Bind exit triggers strictly once
         if (this.config.endpoint && !this._hasSetupTriggers) {
-            const handleExit = (event) => {
-                if (this._hasSent) return; 
+            const handleVisibilityChange = (event) => {
                 if (document.visibilityState === 'hidden' || event.type === 'pagehide' || event.type === 'beforeunload') {
+                    if (this._hasSent) return; 
                     this._hasSent = true;
                     this.forceSend();
+                } else if (document.visibilityState === 'visible') {
+                    // Unlock the beacon so it can fire again if the user returns to the tab
+                    this._hasSent = false;
                 }
             };
-            document.addEventListener('visibilitychange', handleExit);
-            window.addEventListener('pagehide', handleExit);
-            window.addEventListener('beforeunload', handleExit);
+            document.addEventListener('visibilitychange', handleVisibilityChange);
+            window.addEventListener('pagehide', handleVisibilityChange);
+            window.addEventListener('beforeunload', handleVisibilityChange);
             this._hasSetupTriggers = true;
         }
 
