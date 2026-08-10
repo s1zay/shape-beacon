@@ -1,7 +1,6 @@
 /**
- * ShapeEngine SDK v4.1.4 (Bundled for Sizzlestats)
- * Includes Tune v2.17, Configuration Init, Client Deduplication, Smart Media Detection, 
- * + Weighted Chunking & Auto-Save Protocol
+ * ShapeEngine SDK v4.1.3 (Bundled with Tune file)
+ * Includes Tune v2.17, Configuration Init, Client Deduplication, Smart Media Detection, & Tab-Switch Lifecycle
  */
 
 const DEFAULT_TUNE = {
@@ -67,10 +66,9 @@ const DEFAULT_TUNE = {
 };
 
 class EventCollector {
-    constructor(onLimitReached) {
+    constructor() {
         this.events = [];
         this.isListening = false;
-        this.onLimitReached = onLimitReached;
         this._handleMouse = this._handleMouse.bind(this);
         this._handleClick = this._handleClick.bind(this);
         this._handleScroll = this._handleScroll.bind(this);
@@ -99,18 +97,11 @@ class EventCollector {
         window.removeEventListener('scroll', this._handleScroll, opts);
         window.removeEventListener('keydown', this._handleKey, opts);
     }
-    reset() { 
-        this.events = []; 
-    }
-    getRawEvents() { 
-        return this.events; 
-    }
+    reset() { this.events = []; }
+    getRawEvents() { return this.events; }
     _pushEvent(type, data) {
+        if (this.events.length > 10000) this.events.shift(); 
         this.events.push({ type, ts: performance.now(), ...data });
-        // Trigger Chunking Protocol at exactly 10,000 events
-        if (this.events.length === 10000 && this.onLimitReached) {
-            this.onLimitReached();
-        }
     }
     _handleMouse(e) { this._pushEvent('mouse', { x: e.clientX, y: e.clientY }); }
     _handleClick(e) { this._pushEvent('click', { x: e.clientX, y: e.clientY }); }
@@ -131,19 +122,16 @@ class EventCollector {
 
 class ShapeEngine {
     constructor(tuneConfig = null) {
-        this.version = "4.1.3";
+        this.version = "4.1.3"; // UPDATED VERSION
         this.tune = tuneConfig || DEFAULT_TUNE;
-        this.collector = new EventCollector(() => this._handleChunkLimit());
-        
+        this.collector = new EventCollector();
         this.sessionStart = Date.now();
-        this.chunkStart = this.sessionStart;
         this.sessionId = this._generateId(); 
-        this.chunkHistory = [];
         
         this.config = { endpoint: null, projectId: 'default', apiKey: null };
         this._hasSetupTriggers = false;
         this._hasSent = false;
-        this.state = { status: 'offline', results: { foundations: {}, metrics: {}, shapes: {}, device: 'unknown' } };
+        this.state = { status: 'offline', results: { timeline: [], foundations: {}, metrics: {}, shapes: {}, device: 'unknown' } };
     }
     
     _generateId() {
@@ -160,19 +148,23 @@ class ShapeEngine {
 
         // Bind exit triggers strictly once
         if (this.config.endpoint && !this._hasSetupTriggers) {
-            const handleExit = (event) => {
-                if (this._hasSent) return; 
+            const handleVisibilityChange = (event) => {
                 if (document.visibilityState === 'hidden' || event.type === 'pagehide' || event.type === 'beforeunload') {
+                    if (this._hasSent) return; 
                     this._hasSent = true;
                     this.forceSend();
+                } else if (document.visibilityState === 'visible') {
+                    // Unlock the beacon so it can fire again if the user returns to the tab
+                    this._hasSent = false;
                 }
             };
-            document.addEventListener('visibilitychange', handleExit);
-            window.addEventListener('pagehide', handleExit);
-            window.addEventListener('beforeunload', handleExit);
+            document.addEventListener('visibilitychange', handleVisibilityChange);
+            window.addEventListener('pagehide', handleVisibilityChange);
+            window.addEventListener('beforeunload', handleVisibilityChange);
             this._hasSetupTriggers = true;
         }
 
+        // Start collection immediately to maintain the linear lifecycle
         this.start();
     }
 
@@ -192,33 +184,15 @@ class ShapeEngine {
         this.collector.stop();
         this.state.status = 'offline';
     }
-
-    _handleChunkLimit() {
-        const rawEvents = this.collector.getRawEvents();
-        const duration = Date.now() - this.chunkStart;
-        
-        // Analyze the 10k chunk and store the math
-        const chunkData = this._analyzeBuffer(rawEvents, duration);
-        this.chunkHistory.push(chunkData);
-        
-        // Clear RAM instantly without O(N) array shifting
-        this.collector.reset();
-        this.chunkStart = Date.now();
-
-        // 50k Auto-Save Protocol (5 Chunks)
-        if (this.chunkHistory.length >= 5) {
-            this.forceSend();
-            
-            // Generate entirely new session footprint to continue seamlessly
-            this.sessionId = this._generateId();
-            this.sessionStart = Date.now();
-            this.chunkStart = this.sessionStart;
-            this.chunkHistory = [];
-        }
-    }
     
-    _analyzeBuffer(rawEvents, durationMs) {
-        let hasTouch = false, mouseCount = 0, clickCount = 0;
+    analyze() {
+        const rawEvents = this.collector.getRawEvents();
+        const sessionDurationMs = Date.now() - this.sessionStart;
+
+        // --- NEW: SMART MEDIA DETECTION (v4.1.2) ---
+        let hasTouch = false;
+        let mouseCount = 0;
+        let clickCount = 0;
 
         for (let i = 0; i < rawEvents.length; i++) {
             const t = rawEvents[i].type;
@@ -227,22 +201,32 @@ class ShapeEngine {
             else if (t === 'click') clickCount++;
         }
 
-        let device = 'unknown';
+        let detectedDevice = 'unknown';
         if (hasTouch) {
-            device = (mouseCount > clickCount) ? 'hybrid' : 'mobile';
+            if (mouseCount > clickCount) {
+                detectedDevice = 'hybrid'; // True physical mouse overrides mobile defaults
+            } else {
+                detectedDevice = 'mobile'; // Ghost events (mouseCount == clickCount) fall back to mobile
+            }
         } else if (mouseCount > 0 || clickCount > 0) {
-            device = 'desktop';
+            detectedDevice = 'desktop';
         }
 
-        // Gatekeeper
-        if (durationMs < 1000 || rawEvents.length < 20) {
-            return {
+        // --- GATEKEEPER ---
+        if (sessionDurationMs < 1000 || rawEvents.length < 20) {
+            this.state.results = {
+                engineVersion: this.version,
+                tuneVersion: this.tune.version,
                 eventCount: rawEvents.length,
-                sessionDurationMs: durationMs,
-                device: device,
+                sessionDurationMs: sessionDurationMs,
+                device: detectedDevice,
+                timeline: [], 
+                foundations: { actionDensity: 0, burstVariance: 0, idleFraction: 0, pathEfficiency: 0, velocityVolatility: 0, directionalInflection: 0, modalitySwitching: 0 },
                 metrics: { intensity: 0, rhythm: 0, exploration: 0, coherence: 0 },
-                shapes: { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 1 }
+                shapes: { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 1 }, 
+                events: [...rawEvents] 
             };
+            return;
         }
 
         const timeline = this._buildTimeline(rawEvents);
@@ -250,76 +234,13 @@ class ShapeEngine {
         const metrics = this._calculateMetrics(foundations);
         const shapes = this._calculateShapes(metrics);
 
-        return {
-            eventCount: rawEvents.length,
-            sessionDurationMs: durationMs,
-            device: device, 
-            metrics: metrics, 
-            shapes: shapes
-        };
-    }
-
-    _mergeChunks(currentData) {
-        if (this.chunkHistory.length === 0) return currentData;
-        
-        const allChunks = [...this.chunkHistory, currentData].filter(c => c.eventCount > 0);
-        if (allChunks.length === 0) return currentData;
-
-        let totalEvents = 0;
-        let totalDuration = 0;
-        const mergedMetrics = { intensity: 0, rhythm: 0, exploration: 0, coherence: 0 };
-        const mergedShapes = { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 0 };
-        const deviceSet = new Set();
-
-        // Calculate Sums for Weighted Averages
-        for (const chunk of allChunks) {
-            totalEvents += chunk.eventCount;
-            totalDuration += chunk.sessionDurationMs;
-            deviceSet.add(chunk.device);
-            
-            for (const m in mergedMetrics) mergedMetrics[m] += (chunk.metrics[m] || 0) * chunk.eventCount;
-            for (const s in mergedShapes) mergedShapes[s] += (chunk.shapes[s] || 0) * chunk.eventCount;
-        }
-
-        // Divide by Total Events to get Final Averages
-        if (totalEvents > 0) {
-            for (const m in mergedMetrics) mergedMetrics[m] = this._clamp(mergedMetrics[m] / totalEvents);
-            for (const s in mergedShapes) mergedShapes[s] = this._clamp(mergedShapes[s] / totalEvents);
-        }
-
-        let finalDevice = 'unknown';
-        if (deviceSet.has('hybrid') || (deviceSet.has('mobile') && deviceSet.has('desktop'))) finalDevice = 'hybrid';
-        else if (deviceSet.has('mobile')) finalDevice = 'mobile';
-        else if (deviceSet.has('desktop')) finalDevice = 'desktop';
-
-        return {
-            eventCount: totalEvents,
-            sessionDurationMs: totalDuration,
-            device: finalDevice,
-            metrics: mergedMetrics,
-            shapes: mergedShapes
-        };
-    }
-
-    analyze() {
-        const rawEvents = this.collector.getRawEvents();
-        const duration = Date.now() - this.chunkStart;
-        
-        // Analyze final active buffer
-        const currentData = this._analyzeBuffer(rawEvents, duration);
-        
-        // Combine all chunks into single footprint
-        const merged = this._mergeChunks(currentData);
-
         this.state.results = {
             engineVersion: this.version,
             tuneVersion: this.tune.version,
-            eventCount: merged.eventCount,
-            sessionDurationMs: merged.sessionDurationMs,
-            device: merged.device,
-            metrics: merged.metrics,
-            shapes: merged.shapes,
-            events: [...rawEvents] // Attached for local Demo UI compatibility only
+            eventCount: rawEvents.length,
+            sessionDurationMs: sessionDurationMs,
+            device: detectedDevice, 
+            timeline, foundations, metrics, shapes, events: [...rawEvents] 
         };
     }
     
@@ -331,7 +252,6 @@ class ShapeEngine {
         this.analyze();
         const data = this.getResults();
         
-        // Ensure payload size stays micro
         delete data.events;
         delete data.timeline;
 
