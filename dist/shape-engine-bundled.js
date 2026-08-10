@@ -161,17 +161,21 @@ class ShapeEngine {
         // Bind exit triggers strictly once
         if (this.config.endpoint && !this._hasSetupTriggers) {
             const handleVisibilityChange = (event) => {
-                if (document.visibilityState === 'hidden' || event.type === 'pagehide' || event.type === 'beforeunload') {
+                const isHiding = document.visibilityState === 'hidden' || event.type === 'pagehide' || event.type === 'beforeunload';
+                const isShowing = document.visibilityState === 'visible' || event.type === 'pageshow';
+
+                if (isHiding) {
                     if (this._hasSent) return; 
                     this._hasSent = true;
                     this.forceSend();
-                } else if (document.visibilityState === 'visible') {
-                    // Unlock the beacon so it can fire again if the user returns to the tab
+                } else if (isShowing) {
+                    // Unlock the beacon so it can fire again if the user returns to the tab (Resists BFCache locks)
                     this._hasSent = false;
                 }
             };
             document.addEventListener('visibilitychange', handleVisibilityChange);
             window.addEventListener('pagehide', handleVisibilityChange);
+            window.addEventListener('pageshow', handleVisibilityChange);
             window.addEventListener('beforeunload', handleVisibilityChange);
             this._hasSetupTriggers = true;
         }
@@ -334,8 +338,11 @@ class ShapeEngine {
         if (!this.config.endpoint) return;
 
         this.analyze();
-        const data = this.getResults();
         
+        // FIX: Deep clone the results so we don't accidentally mutate local UI state
+        const data = { ...this.getResults() };
+        
+        // Ensure payload size stays micro
         delete data.events;
         delete data.timeline;
 
@@ -446,4 +453,4 @@ class ShapeEngine {
 if (typeof window !== 'undefined') {
     window.ShapeEngine = new ShapeEngine();
     // Do not auto-start in the demo UI.
-                        }
+                                             }
