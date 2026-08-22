@@ -131,13 +131,16 @@ class EventCollector {
 
 class ShapeEngine {
     constructor(tuneConfig = null) {
-        this.version = "4.1.4"; // UPDATED VERSION
+        this.version = "4.1.4";
         this.tune = tuneConfig || DEFAULT_TUNE;
         this.collector = new EventCollector(() => this._handleChunkLimit());
         
-        this.sessionStart = Date.now();
-        this.chunkStart = this.sessionStart;
-        this.sessionId = this._generateId(); 
+        this.pageSessionStart = Date.now();
+        this.chunkStart = this.pageSessionStart;
+        this.pageSessionId = this._generateId();
+        this.domainSessionId = null;
+        this.beaconSequence = 0;
+        this.cumulativeSummary = null;
         this.chunkHistory = [];
         
         this.config = { endpoint: null, projectId: 'default', apiKey: null };
@@ -153,10 +156,35 @@ class ShapeEngine {
         );
     }
 
+    _domainSessionStorageKey() {
+        const parts = [this.config.apiKey, this.config.projectId, this.config.endpoint]
+            .map(value => encodeURIComponent(value || ''));
+        return `shape_beacon:domain_session:v1:${parts.join(':')}`;
+    }
+
+    _getOrCreateDomainSessionId() {
+        const fallbackId = this._generateId();
+        try {
+            const key = this._domainSessionStorageKey();
+            const existingId = window.sessionStorage.getItem(key);
+            if (existingId) return existingId;
+            window.sessionStorage.setItem(key, fallbackId);
+            return fallbackId;
+        } catch (_) {
+            // Storage may be unavailable because of browser policy. The fallback
+            // remains stable for this document, but cannot survive navigation.
+            return fallbackId;
+        }
+    }
+
     init(config = {}) {
         if (config.endpoint) this.config.endpoint = config.endpoint;
         if (config.projectId) this.config.projectId = config.projectId;
         if (config.apiKey) this.config.apiKey = config.apiKey;
+
+        if (!this.domainSessionId) {
+            this.domainSessionId = this._getOrCreateDomainSessionId();
+        }
 
         // Bind exit triggers strictly once
         if (this.config.endpoint && !this._hasSetupTriggers) {
@@ -217,11 +245,13 @@ class ShapeEngine {
         if (this.chunkHistory.length >= 5) {
             // Because of Tab-Switch logic, we bypass the _hasSent lock for this auto-save
             this.forceSend();
-            
-            // Generate entirely new session footprint to continue seamlessly
-            this.sessionId = this._generateId();
-            this.sessionStart = Date.now();
-            this.chunkStart = this.sessionStart;
+
+            // Collapse completed chunks into one weighted summary. This keeps
+            // memory bounded without changing the logical Page Session.
+            this.cumulativeSummary = this._mergeSummaries([
+                this.cumulativeSummary,
+                ...this.chunkHistory
+            ]);
             this.chunkHistory = [];
         }
     }
@@ -268,11 +298,17 @@ class ShapeEngine {
         };
     }
 
-    _mergeChunks(currentData) {
-        if (this.chunkHistory.length === 0) return currentData;
-        
-        const allChunks = [...this.chunkHistory, currentData].filter(c => c.eventCount > 0);
-        if (allChunks.length === 0) return currentData;
+    _mergeSummaries(summaries) {
+        const allChunks = summaries.filter(c => c && c.eventCount > 0);
+        if (allChunks.length === 0) {
+            return {
+                eventCount: 0,
+                sessionDurationMs: 0,
+                device: 'unknown',
+                metrics: { intensity: 0, rhythm: 0, exploration: 0, coherence: 0 },
+                shapes: { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 0 }
+            };
+        }
 
         let totalEvents = 0;
         let totalDuration = 0;
@@ -310,6 +346,14 @@ class ShapeEngine {
         };
     }
 
+    _mergeChunks(currentData) {
+        return this._mergeSummaries([
+            this.cumulativeSummary,
+            ...this.chunkHistory,
+            currentData
+        ]);
+    }
+
     analyze() {
         const rawEvents = this.collector.getRawEvents();
         const duration = Date.now() - this.chunkStart;
@@ -324,7 +368,7 @@ class ShapeEngine {
             engineVersion: this.version,
             tuneVersion: this.tune.version,
             eventCount: merged.eventCount,
-            sessionDurationMs: merged.sessionDurationMs,
+            sessionDurationMs: Date.now() - this.pageSessionStart,
             device: merged.device,
             metrics: merged.metrics,
             shapes: merged.shapes,
@@ -346,9 +390,13 @@ class ShapeEngine {
         delete data.events;
         delete data.timeline;
 
+        this.beaconSequence += 1;
+
         const payload = JSON.stringify({
-            payloadSchema: "v1", 
-            sessionId: this.sessionId, 
+            payloadSchema: "v2",
+            page_session_id: this.pageSessionId,
+            domain_session_id: this.domainSessionId,
+            beacon_sequence: this.beaconSequence,
             projectId: this.config.projectId,
             apiKey: this.config.apiKey,
             url: window.location.href,
