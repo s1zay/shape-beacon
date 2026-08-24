@@ -1,5 +1,5 @@
 /**
- * ShapeEngine SDK v4.1.4 (Bundled with Tune file)
+ * ShapeEngine SDK v4.1.5 (Bundled with Tune file)
  * Includes Tune v2.17, Configuration Init, Client Deduplication, Smart Media Detection, 
  * Tab-Switch Lifecycle, Weighted Chunking, & Auto-Save Protocol
  */
@@ -120,7 +120,9 @@ class EventCollector {
     }
     _handleMouse(e) { this._pushEvent('mouse', { x: e.clientX, y: e.clientY }); }
     _handleClick(e) { this._pushEvent('click', { x: e.clientX, y: e.clientY }); }
-    _handleKey(e)   { this._pushEvent('key', { key: e.key }); }
+    // Keyboard activity contributes to timing and modality metrics, but the
+    // pressed key is deliberately never retained.
+    _handleKey()    { this._pushEvent('key', {}); }
     _handleTouch(e) {
         if (e.touches.length > 0) {
             const touch = e.touches[0];
@@ -137,7 +139,7 @@ class EventCollector {
 
 class ShapeEngine {
     constructor(tuneConfig = null) {
-        this.version = "4.1.4";
+        this.version = "4.1.5";
         this.tune = tuneConfig || DEFAULT_TUNE;
         this.collector = new EventCollector(() => this._handleChunkLimit());
         
@@ -389,6 +391,22 @@ class ShapeEngine {
     
     getResults() { return this.state.results; }
 
+    _getPageUrl() {
+        try {
+            const parsed = new URL(window.location.href);
+            if (parsed.origin !== 'null') return `${parsed.origin}${parsed.pathname}`;
+
+            // Opaque origins (for example data:, file:, and about:) have no
+            // trustworthy origin/path split. Emit only the scheme so embedded
+            // content or local paths cannot become telemetry.
+            return parsed.protocol;
+        } catch (_) {
+            // A Location href should be a valid URL, but avoid breaking beacon
+            // delivery or leaking an unparseable value in browser-like environments.
+            return '';
+        }
+    }
+
     forceSend() {
         if (!this.config.endpoint) return;
 
@@ -397,7 +415,7 @@ class ShapeEngine {
         // FIX: Deep clone the results so we don't accidentally mutate local UI state
         const data = { ...this.getResults() };
         
-        // Ensure payload size stays micro
+        // Keep the transmitted payload to summary data only.
         delete data.events;
         delete data.timeline;
 
@@ -410,7 +428,7 @@ class ShapeEngine {
             beacon_sequence: this.beaconSequence,
             projectId: this.config.projectId,
             apiKey: this.config.apiKey,
-            url: window.location.href,
+            url: this._getPageUrl(),
             timestamp: new Date().toISOString(),
             ...data
         }, null, 2);

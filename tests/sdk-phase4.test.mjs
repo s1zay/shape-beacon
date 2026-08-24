@@ -27,13 +27,17 @@ function createEventTarget() {
             listeners.set(type, current);
         },
         removeEventListener() {},
-        dispatch(type) {
-            for (const listener of listeners.get(type) || []) listener({ type });
+        dispatch(type, event = { type }) {
+            for (const listener of listeners.get(type) || []) listener(event);
         }
     };
 }
 
-function createSdkContext({ storage = new MemorySessionStorage(), startTime = 1000 } = {}) {
+function createSdkContext({
+    storage = new MemorySessionStorage(),
+    startTime = 1000,
+    locationHref = 'https://example.com/home'
+} = {}) {
     const sentPayloads = [];
     const documentTarget = createEventTarget();
     const windowTarget = createEventTarget();
@@ -53,7 +57,7 @@ function createSdkContext({ storage = new MemorySessionStorage(), startTime = 10
     const window = {
         ...windowTarget,
         document,
-        location: { href: 'https://example.com/home' },
+        location: { href: locationHref },
         sessionStorage: storage
     };
     const context = vm.createContext({
@@ -69,6 +73,7 @@ function createSdkContext({ storage = new MemorySessionStorage(), startTime = 10
         },
         fetch: async () => ({ ok: true }),
         performance: { now: () => clock.now },
+        URL,
         crypto: {
             randomUUID: () => `00000000-0000-4000-8000-${String(contextId * 1000 + ++uuidNumber).padStart(12, '0')}`
         },
@@ -295,6 +300,8 @@ test('payload uses the Catcher v2 field names and required scalar types', () => 
     const payload = environment.sentPayloads[0].body;
 
     assert.equal(payload.payloadSchema, 'v2');
+    assert.equal(payload.engineVersion, '4.1.5');
+    assert.equal(payload.tuneVersion, '2.17');
     assert.equal(typeof payload.page_session_id, 'string');
     assert.equal(typeof payload.domain_session_id, 'string');
     assert.equal(payload.beacon_sequence, 1);
@@ -303,6 +310,60 @@ test('payload uses the Catcher v2 field names and required scalar types', () => 
     assert.equal(typeof payload.metrics, 'object');
     assert.equal(typeof payload.shapes, 'object');
     assert.equal('sessionId' in payload, false);
+});
+
+test('keyboard activity never retains or emits the pressed key value', () => {
+    const environment = createSdkContext();
+    const engine = initEngine(environment);
+    const typedValue = 'privacy-sensitive-character';
+
+    environment.window.dispatch('keydown', { type: 'keydown', key: typedValue });
+
+    assert.equal(engine.collector.events.length, 1);
+    assert.deepEqual(Object.keys(engine.collector.events[0]).sort(), ['ts', 'type']);
+    assert.equal(engine.collector.events[0].type, 'key');
+
+    engine.analyze();
+    assert.equal(JSON.stringify(engine.getResults()).includes(typedValue), false);
+
+    engine.forceSend();
+    assert.equal(JSON.stringify(environment.sentPayloads[0].body).includes(typedValue), false);
+});
+
+test('emitted URLs retain origin and pathname but strip query strings and fragments', () => {
+    const environment = createSdkContext({
+        locationHref: 'https://example.com/account?email=test@example.com#billing'
+    });
+    const engine = initEngine(environment);
+
+    engine.forceSend();
+
+    assert.equal(environment.sentPayloads[0].body.url, 'https://example.com/account');
+    assert.equal(environment.sentPayloads[0].body.payloadSchema, 'v2');
+});
+
+test('URL sanitization safely preserves encoded paths, ports, and IPv6 hosts', () => {
+    const environment = createSdkContext({
+        locationHref: 'https://[2001:db8::1]:8443/a%20path/?token=secret#private'
+    });
+    const engine = initEngine(environment);
+
+    engine.forceSend();
+
+    assert.equal(environment.sentPayloads[0].body.url, 'https://[2001:db8::1]:8443/a%20path/');
+});
+
+test('opaque URLs do not expose embedded content, queries, or fragments', () => {
+    const privateContent = 'private-page-content';
+    const environment = createSdkContext({
+        locationHref: `data:text/plain,${privateContent}?token=secret#private`
+    });
+    const engine = initEngine(environment);
+
+    engine.forceSend();
+
+    assert.equal(environment.sentPayloads[0].body.url, 'data:');
+    assert.equal(JSON.stringify(environment.sentPayloads[0].body).includes(privateContent), false);
 });
 
 test('emitted payload passes the on_shape Catcher validator', async t => {
