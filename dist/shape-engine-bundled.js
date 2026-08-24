@@ -66,6 +66,12 @@ const DEFAULT_TUNE = {
   }
 };
 
+const MIN_ENGAGED_DURATION_MS = 5000;
+const MIN_ENGAGED_EVENT_COUNT = 20;
+
+const isUndeterminedEngagement = (durationMs, eventCount) =>
+    durationMs < MIN_ENGAGED_DURATION_MS || eventCount < MIN_ENGAGED_EVENT_COUNT;
+
 class EventCollector {
     constructor(onLimitReached) {
         this.events = [];
@@ -274,7 +280,7 @@ class ShapeEngine {
         }
 
         // Gatekeeper
-        if (durationMs < 1000 || rawEvents.length < 20) {
+        if (isUndeterminedEngagement(durationMs, rawEvents.length)) {
             return {
                 eventCount: rawEvents.length,
                 sessionDurationMs: durationMs,
@@ -364,14 +370,19 @@ class ShapeEngine {
         // Combine all chunks into single footprint
         const merged = this._mergeChunks(currentData);
 
+        const sessionDurationMs = Date.now() - this.pageSessionStart;
+        const shapes = isUndeterminedEngagement(sessionDurationMs, merged.eventCount)
+            ? { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 1 }
+            : merged.shapes;
+
         this.state.results = {
             engineVersion: this.version,
             tuneVersion: this.tune.version,
             eventCount: merged.eventCount,
-            sessionDurationMs: Date.now() - this.pageSessionStart,
+            sessionDurationMs,
             device: merged.device,
             metrics: merged.metrics,
-            shapes: merged.shapes,
+            shapes,
             events: [...rawEvents] // Attached for local Demo UI compatibility only
         };
     }

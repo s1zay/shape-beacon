@@ -54,4 +54,4 @@ A probabilistic distribution representing the user's overarching behavioral prof
 * **`chaotic`**: Erratic movement, unstable pacing, frequent directional changes, and poor coherence. Often correlates with user frustration, broken UI, or panic.
 * **`flat`**: Minimal interaction, limited movement, and prolonged inactivity. Indicates idle tabs or passive media consumption.
 * **`ambient`**: Behavior that cannot be confidently classified into the above five categories due to conflicting or ambiguous traits. 
-* **`undetermined`**: A system-level override. If a session fails the Gatekeeper requirements (<1s duration or <20 events), it bypasses all math and is forcefully scored as `1.0000` undetermined.
+* **`undetermined`**: A system-level override. If a session fails the Gatekeeper requirements (<5s duration or <20 events), it bypasses all math and is forcefully scored as `1.0000` undetermined.

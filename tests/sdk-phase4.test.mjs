@@ -127,6 +127,57 @@ function runFiveChunks(engine, phase) {
     }
 }
 
+const rawEvents = count => Array.from({ length: count }, (_, index) => ({
+    type: 'mouse',
+    ts: index * 10,
+    x: index,
+    y: index
+}));
+
+test('engagement gate uses the inclusive 5000 ms and 20 event boundaries', () => {
+    const engine = initEngine(createSdkContext());
+
+    assert.equal(engine._analyzeBuffer(rawEvents(20), 4999).shapes.undetermined, 1);
+    assert.notEqual(engine._analyzeBuffer(rawEvents(20), 5000).shapes.undetermined, 1);
+    assert.equal(engine._analyzeBuffer(rawEvents(19), 5000).shapes.undetermined, 1);
+    assert.notEqual(engine._analyzeBuffer(rawEvents(20), 7000).shapes.undetermined, 1);
+});
+
+test('zero-event Page Sessions remain Undetermined at five and seven seconds', () => {
+    for (const duration of [5000, 7000]) {
+        const environment = createSdkContext({ startTime: 0 });
+        const engine = initEngine(environment);
+        environment.clock.now = duration;
+        engine.forceSend();
+
+        const payload = environment.sentPayloads[0].body;
+        assert.equal(payload.sessionDurationMs, duration);
+        assert.equal(payload.eventCount, 0);
+        assert.equal(payload.shapes.undetermined, 1);
+    }
+});
+
+test('repeated transmissions apply the gate to cumulative Page Session scalars', () => {
+    const environment = createSdkContext({ startTime: 0 });
+    const engine = initEngine(environment);
+    const pageSessionId = engine.pageSessionId;
+    engine.collector.events = rawEvents(20);
+
+    environment.clock.now = 4999;
+    engine.forceSend();
+    environment.clock.now = 5000;
+    engine.forceSend();
+
+    const [first, second] = environment.sentPayloads.map(item => item.body);
+    assert.equal(first.shapes.undetermined, 1);
+    assert.notEqual(second.shapes.undetermined, 1);
+    assert.deepEqual([first.beacon_sequence, second.beacon_sequence], [1, 2]);
+    assert.equal(first.page_session_id, pageSessionId);
+    assert.equal(second.page_session_id, pageSessionId);
+    assert.equal(second.eventCount, 20);
+    assert.equal(second.sessionDurationMs, 5000);
+});
+
 test('one document keeps page identity through repeated hide/show transmissions', () => {
     const environment = createSdkContext();
     const engine = initEngine(environment);
