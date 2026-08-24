@@ -4,6 +4,14 @@ Shape Beacon is lightweight behavioral analytics for web developers who need mor
 
 **Shape Beacon** is the hosted product and analytics service. **ShapeEngine** is the dependency-free browser SDK in this repository that performs the local analysis.
 
+## Launch availability
+
+Shape Beacon launches with a **FREE TIER** that provides **Individual Page Analytics**: Analyze behavior on each page separately.
+
+**Cross-Page Session Analytics** is a paid capability coming soon: Connect behavior across pages within the same browsing session. It is not currently available in the FREE TIER.
+
+ShapeEngine still maintains Page Session and Domain Session identity for technical delivery and continuity. That SDK behavior does not mean the FREE TIER currently exposes Cross-Page Session Analytics.
+
 [Create an account](https://shapebeacon.com/signup) · [Sign in / open the dashboard](https://shapebeacon.com/dashboard) · [Interpret the metrics](METRICS.md)
 
 ## Quick start

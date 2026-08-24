@@ -10,6 +10,10 @@ const sdkSource = fs.readFileSync(
     'utf8'
 );
 
+const publicDocs = ['../README.md', '../METRICS.md']
+    .map(relativePath => fs.readFileSync(new URL(relativePath, import.meta.url), 'utf8'))
+    .join('\n');
+
 let contextNumber = 0;
 
 class MemorySessionStorage {
@@ -138,6 +142,13 @@ const rawEvents = count => Array.from({ length: count }, (_, index) => ({
     x: index,
     y: index
 }));
+
+test('public documentation uses launch product terminology', () => {
+    assert.match(publicDocs, /FREE TIER/);
+    assert.match(publicDocs, /Individual Page Analytics/);
+    assert.match(publicDocs, /Cross-Page Session Analytics/);
+    assert.doesNotMatch(publicDocs, /Developer Tier|Page View|Domain View/i);
+});
 
 test('engagement gate uses the inclusive 5000 ms and 20 event boundaries', () => {
     const engine = initEngine(createSdkContext());
