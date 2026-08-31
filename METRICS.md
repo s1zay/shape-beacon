@@ -45,4 +45,7 @@ ShapeEngine compares the four metrics with tuned archetypes and emits a probabil
 - **`chaotic`**: Volatile pacing and movement with frequent directional changes.
 - **`flat`**: Minimal interaction, limited movement, or prolonged inactivity.
 - **`ambient`**: A low-confidence or transitional blend that does not closely match the other five calculated archetypes.
-- **`undetermined`**: A system-level override. A Page Session shorter than 5,000 ms or containing fewer than 20 events bypasses shape classification and emits `undetermined: 1.0000`.
+
+## 5. Undetermined classification
+
+`undetermined` is a classification state, not a behavioral shape. It is a system-level override that bypasses normal shape classification when the current Page Session is shorter than 5,000 ms or contains fewer than 20 events. In the SDK payload, this state is represented as `undetermined: 1.0000` while the six behavioral shape values are zero; it is not part of the probabilistic six-shape distribution.

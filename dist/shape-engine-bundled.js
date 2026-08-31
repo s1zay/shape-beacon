@@ -1,5 +1,5 @@
 /**
- * ShapeEngine SDK v4.1.5 (Bundled with Tune file)
+ * ShapeEngine SDK v4.1.6 (Bundled with Tune file)
  * Includes Tune v2.17, Configuration Init, Client Deduplication, Smart Media Detection, 
  * Tab-Switch Lifecycle, Weighted Chunking, & Auto-Save Protocol
  */
@@ -68,6 +68,7 @@ const DEFAULT_TUNE = {
 
 const MIN_ENGAGED_DURATION_MS = 5000;
 const MIN_ENGAGED_EVENT_COUNT = 20;
+const DOMAIN_SESSION_LIFETIME_MS = 2 * 60 * 60 * 1000;
 
 const isUndeterminedEngagement = (durationMs, eventCount) =>
     durationMs < MIN_ENGAGED_DURATION_MS || eventCount < MIN_ENGAGED_EVENT_COUNT;
@@ -139,7 +140,7 @@ class EventCollector {
 
 class ShapeEngine {
     constructor(tuneConfig = null) {
-        this.version = "4.1.5";
+        this.version = "4.1.6";
         this.tune = tuneConfig || DEFAULT_TUNE;
         this.collector = new EventCollector(() => this._handleChunkLimit());
         
@@ -172,11 +173,25 @@ class ShapeEngine {
 
     _getOrCreateDomainSessionId() {
         const fallbackId = this._generateId();
+        const startedAt = Date.now();
         try {
             const key = this._domainSessionStorageKey();
             const existingId = window.sessionStorage.getItem(key);
-            if (existingId) return existingId;
-            window.sessionStorage.setItem(key, fallbackId);
+            if (existingId) {
+                try {
+                    const stored = JSON.parse(existingId);
+                    if (stored && typeof stored.id === 'string' && stored.id &&
+                        Number.isFinite(stored.startedAt) &&
+                        startedAt < stored.startedAt + DOMAIN_SESSION_LIFETIME_MS) {
+                        return stored.id;
+                    }
+                } catch (_) {
+                    // Legacy raw IDs and malformed values rotate safely.
+                }
+            }
+
+            const next = { id: fallbackId, startedAt };
+            window.sessionStorage.setItem(key, JSON.stringify(next));
             return fallbackId;
         } catch (_) {
             // Storage may be unavailable because of browser policy. The fallback

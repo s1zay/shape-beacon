@@ -1,67 +1,74 @@
 # Shape Beacon
 
-Shape Beacon is lightweight behavioral analytics for web developers who need more context than pageview counters provide, without collecting or transmitting a session replay. It analyzes interaction timing and movement in the browser and sends compact summary metrics that describe patterns such as steady, burst, drift, chaotic, flat, ambient, or undetermined behavior.
+Privacy-first behavioral signals for the modern web.
 
-**Shape Beacon** is the hosted product and analytics service. **ShapeEngine** is the dependency-free browser SDK in this repository that performs the local analysis.
+**We don’t track users. We track shapes.**
 
-## Launch availability
+Shape Beacon analyzes interaction patterns in the browser and emits compact behavioral summaries. It helps teams understand how a page is being experienced without storing or transmitting a raw interaction stream.
 
-Shape Beacon launches with a **FREE TIER** that provides **Individual Page Analytics**: Analyze behavior on each page separately.
+Shape Beacon is the hosted product and analytics service. **ShapeEngine** is the dependency-free browser SDK in this repository that performs the local analysis.
 
-**Cross-Page Session Analytics** is a paid capability coming soon: Connect behavior across pages within the same browsing session. It is not currently available in the FREE TIER.
+## What Shape Beacon measures
 
-ShapeEngine still maintains Page Session and Domain Session identity for technical delivery and continuity. That SDK behavior does not mean the FREE TIER currently exposes Cross-Page Session Analytics.
+ShapeEngine turns interaction timing and movement into four normalized metrics:
 
-[Create an account](https://shapebeacon.com/signup) · [Sign in / open the dashboard](https://shapebeacon.com/dashboard) · [Interpret the metrics](METRICS.md)
+- **Intensity** — overall behavioral activity
+- **Rhythm** — temporal consistency
+- **Exploration** — spatial breadth
+- **Coherence** — movement consistency
+
+It also produces a probabilistic distribution across six canonical behavioral shapes:
+
+- **Steady**
+- **Burst**
+- **Drift**
+- **Chaotic**
+- **Flat**
+- **Ambient**
+
+**Undetermined** is a separate classification state, used when a Page Session is too short or contains too few events for a meaningful classification. See [METRICS.md](METRICS.md) for interpretation details.
+
+Shape Beacon is behavioral-signal analytics, not conversion analytics. It does not provide funnels, attribution, heatmaps, user profiling, or traditional session replay.
+
+## Privacy by design
+
+Raw interaction events exist transiently in browser memory so ShapeEngine can calculate its summaries. Emitted telemetry contains compact metrics and shape scores plus limited session and delivery metadata.
+
+- Raw pointer, touch, and click coordinates are not transmitted.
+- Pressed keyboard values are neither retained nor transmitted; keyboard activity is represented only as generic activity.
+- Page contents are not inspected or transmitted.
+- Traditional session replay is not produced.
+- Query strings and URL fragments are removed from emitted page URLs.
+
+The local `getResults()` object may contain the current transient raw event buffer for local or demo use. Network payloads contain compact behavioral summaries and limited session/delivery metadata, not raw interaction events. Operators should separately evaluate the data handling of any configured receiver.
 
 ## Quick start
 
-1. [Create an account](https://shapebeacon.com/signup), or [sign in](https://shapebeacon.com/dashboard).
-2. Register the domain where Shape Beacon will run and create a domain key in the dashboard.
-3. Copy the installation snippet from that domain's integration wizard. The direct-hosted form is:
+The dashboard-generated installation snippet is authoritative for your domain and plan:
 
-```html
-<script src="https://engine.shapebeacon.com/shape-engine-bundled.js"></script>
-<script>
-  window.ShapeEngine.init({
-    endpoint: 'https://engine.shapebeacon.com/',
-    projectId: 'your-project',
-    apiKey: 'sb_public_write_key_from_your_dashboard'
-  });
-</script>
-```
+1. [Create an account](https://shapebeacon.com/signup) or [sign in](https://shapebeacon.com/dashboard).
+2. Register the domain where Shape Beacon will run.
+3. Open that domain's integration wizard.
+4. Copy the exact generated installation snippet.
+5. Install it on the registered site.
+6. Interact with the site, then open Analytics from the dashboard to verify that data arrives.
 
-Use the exact key and installation option shown by the dashboard. A first-party `/metrics/` proxy is recommended when the integration wizard supports your platform; in that setup both the script URL and `endpoint` use the proxied `/metrics/` path instead of the direct host.
+For managed first-party integrations, the current path is `/_sb-metrics/`. The legacy `/metrics/` path should not be used as the preferred modern integration. When the wizard offers a first-party proxy, use the path and configuration it generates.
 
-- `endpoint` is the URL that receives compact summary payloads. It may be the direct Shape Beacon endpoint or the first-party proxy generated by the integration wizard.
-- `projectId` is an optional label for separating telemetry within a domain. It defaults to `default` when omitted.
-- `apiKey` is the domain API key issued in the dashboard. It is embedded in browser code and is therefore a **public write key**, not a server secret. Do not grant it server-side privileges or place a server secret here.
+The dashboard-generated snippet determines the exact script, endpoint, and configuration. The browser API key is a public write credential embedded in client-side code, not a server secret.
 
-`init()` starts collection immediately. ShapeEngine normally sends when the page becomes hidden or unloads; very active pages may also send cumulative autosaves. After interacting with the registered site, open the domain's Analytics/Observatory view from the [dashboard](https://shapebeacon.com/dashboard) to confirm that telemetry arrived.
+## Page and Cross-Page analytics
 
-Domain/origin admission and duplicate or replay handling are receiver responsibilities. Shape Beacon's hosted flow registers a domain for its key and the v2 payload supplies stable session identifiers plus an increasing `beacon_sequence`; this public SDK repository does not independently document or prove every hosted receiver control.
+A **Page Session** describes one document lifecycle. A **Cross-Page / Domain Session** connects qualifying Page Sessions across same-tab navigation and is available as paid functionality according to plan entitlement. See the dashboard and current plan details for availability and pricing.
 
-## What it measures
+Each document receives a new `page_session_id`. Same-tab navigation may reuse a `domain_session_id` through `sessionStorage`. A Domain Session has a fixed two-hour lifetime from its original creation:
 
-ShapeEngine observes mouse movement, clicks, touch movement, scrolling, and generic keyboard activity. It converts event timing and spatial movement into four normalized metrics—intensity, rhythm, exploration, and coherence—and then produces a distribution across behavioral shapes.
+- Navigation before expiry can reuse the Domain Session.
+- Navigation before expiry does not extend the original two-hour window.
+- A Page Session beginning at or after two hours receives a fresh `domain_session_id` and starts a new Domain Session window.
+- If `sessionStorage` is blocked or unavailable, ShapeEngine safely falls back to a document-scoped Domain Session identity that cannot continue across navigation.
 
-- **Compact summaries:** Send metrics and shape scores rather than a raw replay stream.
-- **Low overhead:** Passive listeners collect interaction signals; analysis normally occurs when a page is hidden or unloaded.
-- **Noise separation:** Sessions shorter than 5,000 ms or containing fewer than 20 events are classified as `undetermined`.
-- **Input detection:** Sessions are described as `desktop`, `mobile`, `hybrid`, or `unknown` from observed mouse and touch activity.
-- **Replay alternative:** Use aggregate behavioral patterns without storing video-like session playback.
-
-See [METRICS.md](METRICS.md) for the output interpretation guide.
-
-## Technical privacy behavior
-
-Raw interaction events exist transiently in browser memory so ShapeEngine can calculate its summaries. Raw pointer/touch coordinates and click positions are not included in emitted payloads, and raw event streams are removed before transmission.
-
-Keyboard activity is retained only as a generic `key` interaction; the SDK neither retains nor transmits the pressed key value. It does not inspect or transmit page contents. The emitted page URL contains only the origin and pathname: query strings and fragments are removed before transmission.
-
-Payloads contain compact metrics and shapes plus metadata including SDK/tune versions, event count, duration, device category, timestamp, project and public write key, page/domain session IDs, beacon sequence, and the sanitized URL. This describes the behavior of the SDK in this repository; operators should separately evaluate the data handling of any configured receiver.
-
-## Public SDK API
+## ShapeEngine
 
 The hosted browser bundle creates a single `window.ShapeEngine` instance.
 
@@ -69,37 +76,21 @@ The hosted browser bundle creates a single `window.ShapeEngine` instance.
 - `start()` begins collection if it is stopped.
 - `stop()` stops collection without automatically analyzing or sending.
 - `analyze()` updates the locally available summary from events collected so far.
-- `getResults()` returns the most recently analyzed local result. It may contain the current transient raw event buffer for local/demo compatibility; use emitted payloads, not this object, as the network schema.
-- `forceSend()` analyzes and sends immediately when an endpoint is configured. Raw events are removed from the outgoing payload.
-- `initAutoSend(workerUrl, projectId)` is a legacy compatibility wrapper. New integrations should use `init()` so the public write key can be supplied explicitly.
+- `getResults()` returns the most recently analyzed local result.
+- `forceSend()` analyzes and sends immediately when an endpoint is configured; raw events are removed from the outgoing payload.
+- `initAutoSend(workerUrl, projectId)` is a legacy compatibility wrapper. New integrations should use `init()`.
 
-The SDK expects standard modern browser APIs including `addEventListener`, `performance`, Web Crypto, `sessionStorage`, `navigator.sendBeacon`, and `fetch` as a fallback.
-
-## Page and Domain Sessions
-
-Each document lifecycle receives one `page_session_id`. It remains stable across visibility changes and every transmission, including cumulative autosaves. Each transmission increments `beacon_sequence` so a receiver can identify stale or duplicate payloads.
-
-`domain_session_id` is stored in `sessionStorage` under a key namespaced to the configured API key, project, and endpoint. Conventional same-tab navigations therefore share a Domain Session while each new document gets a new Page Session. If `sessionStorage` is blocked or unavailable, the SDK falls back to a document-scoped Domain Session and cannot stitch across navigation.
-
-The SDK holds at most 10,000 raw events at a time, along with up to five chunk summaries and one cumulative summary. At approximately 50,000 events, completed chunks are folded into a cumulative weighted summary and released. Later payloads continue to describe the full Page Session and may therefore repeat cumulative data with a higher `beacon_sequence`.
-
-Generic SPA route detection is intentionally unsupported. A full document navigation starts a new Page Session; `pushState`, `replaceState`, `popstate`, and hash-only route changes do not create one.
+ShapeEngine normally sends when the page becomes hidden or unloads. Very active pages may also trigger cumulative autosaves. The SDK expects standard modern browser APIs including `addEventListener`, `performance`, Web Crypto, `sessionStorage`, `navigator.sendBeacon`, and `fetch` as a fallback.
 
 ## Development
 
-The repository has no runtime dependencies. Run the public SDK tests with Node.js 18 or newer:
+This repository contains the distributable browser SDK and its public tests. It has no runtime dependencies. Run the tests with Node.js 18 or newer:
 
 ```sh
-node tests/sdk-phase4.test.mjs
+node tests/shape-engine.test.mjs
 ```
 
-Maintainers may additionally set `ON_SHAPE_ROOT` to an adjacent backend checkout to run the optional cross-repository Catcher contract check. That checkout is not required to install, use, or test the public SDK.
-
-```sh
-ON_SHAPE_ROOT=/path/to/backend-checkout node tests/sdk-phase4.test.mjs
-```
-
-The distributable browser SDK is [dist/shape-engine-bundled.js](dist/shape-engine-bundled.js). `wrangler.jsonc` is only a minimal static-asset configuration for hosting that bundle; it is not a telemetry receiver.
+The distributable browser SDK is [dist/shape-engine-bundled.js](dist/shape-engine-bundled.js). `wrangler.jsonc` is a minimal static-asset configuration for hosting that bundle.
 
 ## License
 

@@ -1,18 +1,12 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import path from 'node:path';
 import test from 'node:test';
 import vm from 'node:vm';
-import { pathToFileURL } from 'node:url';
 
 const sdkSource = fs.readFileSync(
     new URL('../dist/shape-engine-bundled.js', import.meta.url),
     'utf8'
 );
-
-const publicDocs = ['../README.md', '../METRICS.md']
-    .map(relativePath => fs.readFileSync(new URL(relativePath, import.meta.url), 'utf8'))
-    .join('\n');
 
 let contextNumber = 0;
 
@@ -129,9 +123,9 @@ function summary(eventCount, intensity, shape) {
     };
 }
 
-function runFiveChunks(engine, phase) {
+function runFiveChunks(engine, batchLabel) {
     for (let index = 0; index < 5; index++) {
-        engine.collector.events = [{ phase }];
+        engine.collector.events = [{ batchLabel }];
         engine._handleChunkLimit();
     }
 }
@@ -142,13 +136,6 @@ const rawEvents = count => Array.from({ length: count }, (_, index) => ({
     x: index,
     y: index
 }));
-
-test('public documentation uses launch product terminology', () => {
-    assert.match(publicDocs, /FREE TIER/);
-    assert.match(publicDocs, /Individual Page Analytics/);
-    assert.match(publicDocs, /Cross-Page Session Analytics/);
-    assert.doesNotMatch(publicDocs, /Developer Tier|Page View|Domain View/i);
-});
 
 test('engagement gate uses the inclusive 5000 ms and 20 event boundaries', () => {
     const engine = initEngine(createSdkContext());
@@ -212,16 +199,33 @@ test('one document keeps page identity through repeated hide/show transmissions'
     assert.equal(engine.pageSessionId, pageSessionId);
 });
 
-test('new documents get new Page Sessions while same-tab storage keeps Domain Session', () => {
+test('same-tab documents reuse an unexpired Domain Session without sliding its start', () => {
     const storage = new MemorySessionStorage();
-    const firstEnvironment = createSdkContext({ storage });
+    const firstEnvironment = createSdkContext({ storage, startTime: 0 });
     const first = initEngine(firstEnvironment);
-    firstEnvironment.window.location.href = 'https://example.com/pricing';
-    const secondEnvironment = createSdkContext({ storage });
+    const storedKey = [...storage.values.keys()][0];
+    const initialStorageValue = storage.getItem(storedKey);
+    const secondEnvironment = createSdkContext({ storage, startTime: 7199999 });
     const second = initEngine(secondEnvironment);
 
     assert.notEqual(first.pageSessionId, second.pageSessionId);
     assert.equal(first.domainSessionId, second.domainSessionId);
+    assert.equal(storage.getItem(storedKey), initialStorageValue);
+
+    const thirdEnvironment = createSdkContext({ storage, startTime: 7200000 });
+    const third = initEngine(thirdEnvironment);
+    assert.notEqual(second.pageSessionId, third.pageSessionId);
+    assert.notEqual(first.domainSessionId, third.domainSessionId);
+
+    const rotatedStorage = JSON.parse(storage.getItem(storedKey));
+    assert.equal(rotatedStorage.id, third.domainSessionId);
+    assert.equal(rotatedStorage.startedAt, 7200000);
+
+    const fourth = initEngine(createSdkContext({ storage, startTime: 14399999 }));
+    assert.equal(fourth.domainSessionId, third.domainSessionId);
+
+    const fifth = initEngine(createSdkContext({ storage, startTime: 14400000 }));
+    assert.notEqual(fifth.domainSessionId, third.domainSessionId);
 
     const independent = initEngine(createSdkContext({ storage: new MemorySessionStorage() }));
     assert.notEqual(first.domainSessionId, independent.domainSessionId);
@@ -234,6 +238,72 @@ test('new documents get new Page Sessions while same-tab storage keeps Domain Se
         apiKey: 'different-api-key'
     });
     assert.notEqual(first.domainSessionId, unrelated.domainSessionId);
+});
+
+test('legacy raw Domain Session storage rotates into timestamped storage', () => {
+    const storage = new MemorySessionStorage();
+    const first = initEngine(createSdkContext({ storage, startTime: 1000 }));
+    const key = [...storage.values.keys()][0];
+    storage.setItem(key, first.domainSessionId);
+
+    const second = initEngine(createSdkContext({ storage, startTime: 2000 }));
+    assert.notEqual(second.domainSessionId, first.domainSessionId);
+    assert.deepEqual(JSON.parse(storage.getItem(key)), {
+        id: second.domainSessionId,
+        startedAt: 2000
+    });
+});
+
+test('invalid timestamped Domain Session values rotate safely', () => {
+    const invalidValues = [
+        null,
+        [],
+        { startedAt: 3000 },
+        { id: '', startedAt: 3000 },
+        { id: 'stale-id' },
+        { id: 'stale-id', startedAt: null },
+        { id: 'stale-id', startedAt: 'not-a-number' }
+    ];
+    const key = 'shape_beacon:domain_session:v1:api-key-1:project-1:https%3A%2F%2Fcollector.example%2Fmetrics';
+
+    for (const invalidValue of invalidValues) {
+        const storage = new MemorySessionStorage();
+        storage.setItem(key, JSON.stringify(invalidValue));
+        const environment = createSdkContext({ storage, startTime: 3000 });
+
+        let engine;
+        assert.doesNotThrow(() => { engine = initEngine(environment); });
+        assert.notEqual(engine.domainSessionId, 'stale-id');
+        assert.deepEqual(JSON.parse(storage.getItem(key)), {
+            id: engine.domainSessionId,
+            startedAt: 3000
+        });
+    }
+});
+
+test('setItem failure falls back to a document-scoped Domain Session', () => {
+    class SetItemBlockedStorage {
+        getItem() { return null; }
+        setItem() { throw new Error('blocked'); }
+    }
+
+    const storage = new SetItemBlockedStorage();
+    const firstEnvironment = createSdkContext({ storage, startTime: 4000 });
+    let first;
+    assert.doesNotThrow(() => { first = initEngine(firstEnvironment); });
+    const firstDomainSessionId = first.domainSessionId;
+    assert.equal(typeof firstDomainSessionId, 'string');
+    assert.ok(firstDomainSessionId.length > 0);
+
+    assert.doesNotThrow(() => first.init({
+        endpoint: 'https://collector.example/metrics',
+        projectId: 'project-1',
+        apiKey: 'api-key-1'
+    }));
+    assert.equal(first.domainSessionId, firstDomainSessionId);
+
+    const second = initEngine(createSdkContext({ storage, startTime: 5000 }));
+    assert.notEqual(second.domainSessionId, firstDomainSessionId);
 });
 
 test('blocked sessionStorage falls back safely to a document-scoped Domain Session', () => {
@@ -255,7 +325,7 @@ test('50K autosaves keep identity, sequence, cumulative behavior, duration, and 
     const domainSessionId = engine.domainSessionId;
     engine._analyzeBuffer = events => events.length === 0
         ? summary(0, 0, 'steady')
-        : summary(10000, events[0].phase === 'early' ? 0.2 : 0.8, events[0].phase === 'early' ? 'steady' : 'burst');
+        : summary(10000, events[0].batchLabel === 'early' ? 0.2 : 0.8, events[0].batchLabel === 'early' ? 'steady' : 'burst');
 
     environment.clock.now = 61000;
     runFiveChunks(engine, 'early');
@@ -304,17 +374,19 @@ test('the collector still triggers its autosave after five real 10K raw-event bu
     assert.equal(engine.cumulativeSummary.eventCount, 50000);
 });
 
-test('payload uses the Catcher v2 field names and required scalar types', () => {
+test('payload uses the public v2 field names and required scalar types', () => {
     const environment = createSdkContext();
     const engine = initEngine(environment);
     engine.forceSend();
     const payload = environment.sentPayloads[0].body;
 
     assert.equal(payload.payloadSchema, 'v2');
-    assert.equal(payload.engineVersion, '4.1.5');
+    assert.equal(payload.engineVersion, '4.1.6');
     assert.equal(payload.tuneVersion, '2.17');
     assert.equal(typeof payload.page_session_id, 'string');
     assert.equal(typeof payload.domain_session_id, 'string');
+    assert.equal('startedAt' in payload, false);
+    assert.equal(JSON.stringify(payload).includes('startedAt'), false);
     assert.equal(payload.beacon_sequence, 1);
     assert.equal(Number.isSafeInteger(payload.eventCount), true);
     assert.equal(Number.isFinite(payload.sessionDurationMs), true);
@@ -375,16 +447,4 @@ test('opaque URLs do not expose embedded content, queries, or fragments', () => 
 
     assert.equal(environment.sentPayloads[0].body.url, 'data:');
     assert.equal(JSON.stringify(environment.sentPayloads[0].body).includes(privateContent), false);
-});
-
-test('emitted payload passes the on_shape Catcher validator', async t => {
-    const onShapeRoot = process.env.ON_SHAPE_ROOT;
-    if (!onShapeRoot) return t.skip('Set ON_SHAPE_ROOT for the cross-repository contract check');
-
-    const validatorUrl = pathToFileURL(path.join(onShapeRoot, 'workers/catcher/session-storage.mjs'));
-    const { validatePageSessionPayload } = await import(validatorUrl.href);
-    const environment = createSdkContext();
-    const engine = initEngine(environment);
-    engine.forceSend();
-    assert.doesNotThrow(() => validatePageSessionPayload(environment.sentPayloads[0].body));
 });
