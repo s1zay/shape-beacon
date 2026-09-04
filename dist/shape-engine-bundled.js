@@ -1,5 +1,5 @@
 /**
- * ShapeEngine SDK v4.1.6 (Bundled with Tune file)
+ * ShapeEngine SDK v4.1.7 (Bundled with Tune file)
  * Includes Tune v2.17, Configuration Init, Client Deduplication, Smart Media Detection, 
  * Tab-Switch Lifecycle, Weighted Chunking, & Auto-Save Protocol
  */
@@ -69,6 +69,7 @@ const DEFAULT_TUNE = {
 const MIN_ENGAGED_DURATION_MS = 5000;
 const MIN_ENGAGED_EVENT_COUNT = 20;
 const DOMAIN_SESSION_LIFETIME_MS = 2 * 60 * 60 * 1000;
+const PAGE_SESSION_ANALYTICAL_MAX_MS = 2 * 60 * 60 * 1000;
 
 const isUndeterminedEngagement = (durationMs, eventCount) =>
     durationMs < MIN_ENGAGED_DURATION_MS || eventCount < MIN_ENGAGED_EVENT_COUNT;
@@ -140,7 +141,7 @@ class EventCollector {
 
 class ShapeEngine {
     constructor(tuneConfig = null) {
-        this.version = "4.1.6";
+        this.version = "4.1.7";
         this.tune = tuneConfig || DEFAULT_TUNE;
         this.collector = new EventCollector(() => this._handleChunkLimit());
         
@@ -148,6 +149,8 @@ class ShapeEngine {
         this.chunkStart = this.pageSessionStart;
         this.pageSessionId = this._generateId();
         this.domainSessionId = null;
+        this.domainSessionStart = null;
+        this.pageStartProvenance = 'initial_document';
         this.beaconSequence = 0;
         this.cumulativeSummary = null;
         this.chunkHistory = [];
@@ -155,6 +158,7 @@ class ShapeEngine {
         this.config = { endpoint: null, projectId: 'default', apiKey: null };
         this._hasSetupTriggers = false;
         this._hasSent = false;
+        this._pageMaxAgeTimer = null;
         this.state = { status: 'offline', results: { timeline: [], foundations: {}, metrics: {}, shapes: {}, device: 'unknown' } };
     }
     
@@ -171,9 +175,9 @@ class ShapeEngine {
         return `shape_beacon:domain_session:v1:${parts.join(':')}`;
     }
 
-    _getOrCreateDomainSessionId() {
+    _getOrCreateDomainSession() {
         const fallbackId = this._generateId();
-        const startedAt = Date.now();
+        const now = Date.now();
         try {
             const key = this._domainSessionStorageKey();
             const existingId = window.sessionStorage.getItem(key);
@@ -182,22 +186,49 @@ class ShapeEngine {
                     const stored = JSON.parse(existingId);
                     if (stored && typeof stored.id === 'string' && stored.id &&
                         Number.isFinite(stored.startedAt) &&
-                        startedAt < stored.startedAt + DOMAIN_SESSION_LIFETIME_MS) {
-                        return stored.id;
+                        now < stored.startedAt + DOMAIN_SESSION_LIFETIME_MS) {
+                        return { id: stored.id, startedAt: stored.startedAt };
                     }
                 } catch (_) {
                     // Legacy raw IDs and malformed values rotate safely.
                 }
             }
 
-            const next = { id: fallbackId, startedAt };
+            const next = { id: fallbackId, startedAt: this.pageSessionStart };
             window.sessionStorage.setItem(key, JSON.stringify(next));
-            return fallbackId;
+            return next;
         } catch (_) {
             // Storage may be unavailable because of browser policy. The fallback
             // remains stable for this document, but cannot survive navigation.
-            return fallbackId;
+            return { id: fallbackId, startedAt: this.pageSessionStart };
         }
+    }
+
+    _schedulePageMaxAge() {
+        if (this._pageMaxAgeTimer !== null) clearTimeout(this._pageMaxAgeTimer);
+        const remaining = Math.max(0,
+            this.pageSessionStart + PAGE_SESSION_ANALYTICAL_MAX_MS - Date.now());
+        this._pageMaxAgeTimer = setTimeout(() => {
+            this._pageMaxAgeTimer = null;
+            this.forceSend();
+        }, remaining);
+    }
+
+    _rolloverPageSession() {
+        this.collector.reset();
+        this.pageSessionStart = Date.now();
+        this.chunkStart = this.pageSessionStart;
+        this.pageSessionId = this._generateId();
+        const domainSession = this._getOrCreateDomainSession();
+        this.domainSessionId = domainSession.id;
+        this.domainSessionStart = domainSession.startedAt;
+        this.pageStartProvenance = 'max_age_rollover_started';
+        this.beaconSequence = 0;
+        this.cumulativeSummary = null;
+        this.chunkHistory = [];
+        this._hasSent = false;
+        this.state.results = { timeline: [], foundations: {}, metrics: {}, shapes: {}, device: 'unknown' };
+        this._schedulePageMaxAge();
     }
 
     init(config = {}) {
@@ -206,7 +237,10 @@ class ShapeEngine {
         if (config.apiKey) this.config.apiKey = config.apiKey;
 
         if (!this.domainSessionId) {
-            this.domainSessionId = this._getOrCreateDomainSessionId();
+            const domainSession = this._getOrCreateDomainSession();
+            this.domainSessionId = domainSession.id;
+            this.domainSessionStart = domainSession.startedAt;
+            this._schedulePageMaxAge();
         }
 
         // Bind exit triggers strictly once
@@ -267,7 +301,8 @@ class ShapeEngine {
         // 50k Auto-Save Protocol (5 Chunks)
         if (this.chunkHistory.length >= 5) {
             // Because of Tab-Switch logic, we bypass the _hasSent lock for this auto-save
-            this.forceSend();
+            const rolledOver = this.forceSend();
+            if (rolledOver) return;
 
             // Collapse completed chunks into one weighted summary. This keeps
             // memory bounded without changing the logical Page Session.
@@ -423,7 +458,9 @@ class ShapeEngine {
     }
 
     forceSend() {
-        if (!this.config.endpoint) return;
+        if (!this.config.endpoint) return false;
+
+        const isMaxAgeFinal = Date.now() - this.pageSessionStart >= PAGE_SESSION_ANALYTICAL_MAX_MS;
 
         this.analyze();
         
@@ -437,21 +474,30 @@ class ShapeEngine {
         this.beaconSequence += 1;
 
         const payload = JSON.stringify({
-            payloadSchema: "v2",
+            payloadSchema: "v3",
+            lifecycle_semantics_version: "v3",
             page_session_id: this.pageSessionId,
             domain_session_id: this.domainSessionId,
+            page_session_started_at: this.pageSessionStart,
+            domain_session_started_at: this.domainSessionStart,
             beacon_sequence: this.beaconSequence,
+            page_session_final: isMaxAgeFinal,
+            page_session_end_reason: isMaxAgeFinal ? 'max_age' : null,
+            page_start_provenance: this.pageStartProvenance,
             projectId: this.config.projectId,
             apiKey: this.config.apiKey,
             url: this._getPageUrl(),
             timestamp: new Date().toISOString(),
-            ...data
+            ...data,
+            ...(isMaxAgeFinal ? { sessionDurationMs: PAGE_SESSION_ANALYTICAL_MAX_MS } : {})
         }, null, 2);
 
         const success = navigator.sendBeacon(this.config.endpoint, payload);
         if (!success) {
             fetch(this.config.endpoint, { method: 'POST', body: payload, keepalive: true }).catch(e => console.error(e));
         }
+        if (isMaxAgeFinal) this._rolloverPageSession();
+        return isMaxAgeFinal;
     }
 
     _buildTimeline(events) { return events.map(ev => ({ ts: ev.ts, type: ev.type, x: ev.x !== undefined ? ev.x : null, y: ev.y !== undefined ? ev.y : null })).sort((a, b) => a.ts - b.ts); }

@@ -80,7 +80,7 @@ The hosted browser bundle creates a single `window.ShapeEngine` instance.
 - `forceSend()` analyzes and sends immediately when an endpoint is configured; raw events are removed from the outgoing payload.
 - `initAutoSend(workerUrl, projectId)` is a legacy compatibility wrapper. New integrations should use `init()`.
 
-ShapeEngine normally sends when the page becomes hidden or unloads. Very active pages may also trigger cumulative autosaves. The SDK expects standard modern browser APIs including `addEventListener`, `performance`, Web Crypto, `sessionStorage`, `navigator.sendBeacon`, and `fetch` as a fallback.
+ShapeEngine emits lifecycle-v3 summaries. Visibility, page-hide, unload, and high-volume autosave reports are incremental and remain open for later updates. At the two-hour Page analytical maximum, ShapeEngine emits the controlled `max_age` final report and starts a new Page lifecycle; the server may otherwise finalize an inactive Page by its authoritative receipt-time timeout. The SDK expects standard modern browser APIs including `addEventListener`, `performance`, Web Crypto, `sessionStorage`, `navigator.sendBeacon`, and `fetch` as a fallback.
 
 ## Development
 

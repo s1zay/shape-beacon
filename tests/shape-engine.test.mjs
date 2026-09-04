@@ -40,6 +40,8 @@ function createSdkContext({
     const documentTarget = createEventTarget();
     const windowTarget = createEventTarget();
     const clock = { now: startTime };
+    const timers = new Map();
+    let timerNumber = 0;
     const contextId = ++contextNumber;
     let uuidNumber = 0;
 
@@ -75,8 +77,12 @@ function createSdkContext({
         crypto: {
             randomUUID: () => `00000000-0000-4000-8000-${String(contextId * 1000 + ++uuidNumber).padStart(12, '0')}`
         },
-        setTimeout,
-        clearTimeout
+        setTimeout(callback, delay) {
+            const id = ++timerNumber;
+            timers.set(id, { callback, delay });
+            return id;
+        },
+        clearTimeout(id) { timers.delete(id); }
     });
     context.globalThis = context;
     vm.runInContext(
@@ -91,6 +97,7 @@ function createSdkContext({
         document,
         sentPayloads,
         storage,
+        timers,
         window
     };
 }
@@ -210,6 +217,8 @@ test('same-tab documents reuse an unexpired Domain Session without sliding its s
 
     assert.notEqual(first.pageSessionId, second.pageSessionId);
     assert.equal(first.domainSessionId, second.domainSessionId);
+    assert.equal(first.domainSessionStart, 0);
+    assert.equal(second.domainSessionStart, 0);
     assert.equal(storage.getItem(storedKey), initialStorageValue);
 
     const thirdEnvironment = createSdkContext({ storage, startTime: 7200000 });
@@ -238,6 +247,12 @@ test('same-tab documents reuse an unexpired Domain Session without sliding its s
         apiKey: 'different-api-key'
     });
     assert.notEqual(first.domainSessionId, unrelated.domainSessionId);
+
+    const plusOneStorage = new MemorySessionStorage();
+    const beforePlusOne = initEngine(createSdkContext({ storage: plusOneStorage, startTime: 0 }));
+    const afterPlusOne = initEngine(createSdkContext({ storage: plusOneStorage, startTime: 7_200_001 }));
+    assert.notEqual(afterPlusOne.domainSessionId, beforePlusOne.domainSessionId);
+    assert.equal(afterPlusOne.domainSessionStart, 7_200_001);
 });
 
 test('legacy raw Domain Session storage rotates into timestamped storage', () => {
@@ -374,19 +389,23 @@ test('the collector still triggers its autosave after five real 10K raw-event bu
     assert.equal(engine.cumulativeSummary.eventCount, 50000);
 });
 
-test('payload uses the public v2 field names and required scalar types', () => {
+test('payload uses lifecycle-v3 field names and required scalar types', () => {
     const environment = createSdkContext();
     const engine = initEngine(environment);
     engine.forceSend();
     const payload = environment.sentPayloads[0].body;
 
-    assert.equal(payload.payloadSchema, 'v2');
-    assert.equal(payload.engineVersion, '4.1.6');
+    assert.equal(payload.payloadSchema, 'v3');
+    assert.equal(payload.lifecycle_semantics_version, 'v3');
+    assert.equal(payload.engineVersion, '4.1.7');
     assert.equal(payload.tuneVersion, '2.17');
     assert.equal(typeof payload.page_session_id, 'string');
     assert.equal(typeof payload.domain_session_id, 'string');
-    assert.equal('startedAt' in payload, false);
-    assert.equal(JSON.stringify(payload).includes('startedAt'), false);
+    assert.equal(payload.page_session_started_at, 1000);
+    assert.equal(payload.domain_session_started_at, 1000);
+    assert.equal(payload.page_start_provenance, 'initial_document');
+    assert.equal(payload.page_session_final, false);
+    assert.equal(payload.page_session_end_reason, null);
     assert.equal(payload.beacon_sequence, 1);
     assert.equal(Number.isSafeInteger(payload.eventCount), true);
     assert.equal(Number.isFinite(payload.sessionDurationMs), true);
@@ -422,7 +441,90 @@ test('emitted URLs retain origin and pathname but strip query strings and fragme
     engine.forceSend();
 
     assert.equal(environment.sentPayloads[0].body.url, 'https://example.com/account');
-    assert.equal(environment.sentPayloads[0].body.payloadSchema, 'v2');
+    assert.equal(environment.sentPayloads[0].body.payloadSchema, 'v3');
+});
+
+test('incremental lifecycle sends retain stable identity and client start facts', () => {
+    const environment = createSdkContext({ startTime: 10_000 });
+    const engine = initEngine(environment);
+
+    environment.clock.now = 15_000;
+    engine.forceSend();
+    environment.clock.now = 20_000;
+    engine.forceSend();
+
+    const [first, second] = environment.sentPayloads.map(item => item.body);
+    assert.deepEqual([first.beacon_sequence, second.beacon_sequence], [1, 2]);
+    for (const payload of [first, second]) {
+        assert.equal(payload.page_session_id, engine.pageSessionId);
+        assert.equal(payload.domain_session_id, engine.domainSessionId);
+        assert.equal(payload.page_session_started_at, 10_000);
+        assert.equal(payload.domain_session_started_at, 10_000);
+        assert.equal(payload.page_session_final, false);
+        assert.equal(payload.page_session_end_reason, null);
+    }
+});
+
+test('visibility, pagehide, and BFCache sends remain incremental rather than explicit-final', () => {
+    const environment = createSdkContext({ startTime: 0 });
+    initEngine(environment);
+
+    environment.clock.now = 5000;
+    environment.document.visibilityState = 'hidden';
+    environment.document.dispatch('visibilitychange');
+    environment.document.visibilityState = 'visible';
+    environment.window.dispatch('pageshow');
+    environment.window.dispatch('pagehide');
+
+    assert.equal(environment.sentPayloads.length, 2);
+    assert.ok(environment.sentPayloads.every(({ body }) => body.page_session_final === false));
+    assert.ok(environment.sentPayloads.every(({ body }) => body.page_session_end_reason === null));
+});
+
+test('the controlled Page max-age report is final and rolls Page and Domain identity', () => {
+    const environment = createSdkContext({ startTime: 0 });
+    const engine = initEngine(environment);
+    const oldPage = engine.pageSessionId;
+    const oldDomain = engine.domainSessionId;
+
+    environment.clock.now = 7_200_001;
+    engine.forceSend();
+
+    const final = environment.sentPayloads[0].body;
+    assert.equal(final.page_session_id, oldPage);
+    assert.equal(final.domain_session_id, oldDomain);
+    assert.equal(final.sessionDurationMs, 7_200_000);
+    assert.equal(final.page_session_final, true);
+    assert.equal(final.page_session_end_reason, 'max_age');
+    assert.notEqual(engine.pageSessionId, oldPage);
+    assert.notEqual(engine.domainSessionId, oldDomain);
+    assert.equal(engine.pageSessionStart, 7_200_001);
+    assert.equal(engine.domainSessionStart, 7_200_001);
+    assert.equal(engine.pageStartProvenance, 'max_age_rollover_started');
+    assert.equal(engine.beaconSequence, 0);
+
+    engine.forceSend();
+    const next = environment.sentPayloads[1].body;
+    assert.equal(next.page_session_id, engine.pageSessionId);
+    assert.equal(next.domain_session_id, engine.domainSessionId);
+    assert.equal(next.beacon_sequence, 1);
+    assert.equal(next.page_session_final, false);
+    assert.equal(next.page_start_provenance, 'max_age_rollover_started');
+});
+
+test('an autosave at Page max age cannot carry old chunks into the rolled Page', () => {
+    const environment = createSdkContext({ startTime: 0 });
+    const engine = initEngine(environment);
+    engine._analyzeBuffer = events => summary(events.length, 0.4, 'steady');
+    environment.clock.now = 7_200_000;
+    runFiveChunks(engine, 'final');
+
+    assert.equal(environment.sentPayloads.length, 1);
+    assert.equal(environment.sentPayloads[0].body.page_session_final, true);
+    assert.equal(engine.beaconSequence, 0);
+    assert.equal(engine.cumulativeSummary, null);
+    assert.equal(engine.chunkHistory.length, 0);
+    assert.equal(engine.collector.events.length, 0);
 });
 
 test('URL sanitization safely preserves encoded paths, ports, and IPv6 hosts', () => {
