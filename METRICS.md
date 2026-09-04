@@ -8,7 +8,7 @@ Normalized mathematical outputs are clamped between `0.0000` and `1.0000` and ro
 
 - **`sessionDurationMs`**: Total elapsed time for the Page Session, in milliseconds.
 - **`eventCount`**: Number of browser interaction events summarized for the Page Session.
-- **`device`**: Input category inferred from observed events: `mobile` (touch only), `desktop` (mouse only), `hybrid` (both), or `unknown`.
+- **`device`**: Input category inferred from canonical events: `mobile` (touch or pen normalized as touch), `desktop` (mouse only), `hybrid` (both), or `unknown`.
 
 The payload also includes schema, SDK/tune version, sanitized page URL, timestamp, project/public write key, Page Session ID, Domain Session ID, and beacon sequence fields. See the README's privacy and session sections for details.
 

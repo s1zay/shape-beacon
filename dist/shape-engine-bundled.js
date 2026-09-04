@@ -1,5 +1,5 @@
 /**
- * ShapeEngine SDK v4.1.7 (Bundled with Tune file)
+ * ShapeEngine SDK v4.1.8 (Bundled with Tune file)
  * Includes Tune v2.17, Configuration Init, Client Deduplication, Smart Media Detection, 
  * Tab-Switch Lifecycle, Weighted Chunking, & Auto-Save Protocol
  */
@@ -79,6 +79,8 @@ class EventCollector {
         this.events = [];
         this.isListening = false;
         this.onLimitReached = onLimitReached;
+        this.usesPointerEvents = false;
+        this._handlePointer = this._handlePointer.bind(this);
         this._handleMouse = this._handleMouse.bind(this);
         this._handleClick = this._handleClick.bind(this);
         this._handleScroll = this._handleScroll.bind(this);
@@ -89,10 +91,16 @@ class EventCollector {
         if (this.isListening) return;
         this.isListening = true;
         const opts = { passive: true, capture: true };
-        window.addEventListener('mousemove', this._handleMouse, opts);
-        window.addEventListener('mousedown', this._handleClick, opts);
-        window.addEventListener('touchstart', this._handleTouch, opts);
-        window.addEventListener('touchmove', this._handleTouch, opts);
+        this.usesPointerEvents = 'PointerEvent' in window;
+        if (this.usesPointerEvents) {
+            window.addEventListener('pointermove', this._handlePointer, opts);
+            window.addEventListener('pointerdown', this._handlePointer, opts);
+        } else {
+            window.addEventListener('mousemove', this._handleMouse, opts);
+            window.addEventListener('mousedown', this._handleClick, opts);
+            window.addEventListener('touchstart', this._handleTouch, opts);
+            window.addEventListener('touchmove', this._handleTouch, opts);
+        }
         window.addEventListener('scroll', this._handleScroll, opts);
         window.addEventListener('keydown', this._handleKey, opts);
     }
@@ -100,10 +108,15 @@ class EventCollector {
         if (!this.isListening) return;
         this.isListening = false;
         const opts = { capture: true };
-        window.removeEventListener('mousemove', this._handleMouse, opts);
-        window.removeEventListener('mousedown', this._handleClick, opts);
-        window.removeEventListener('touchstart', this._handleTouch, opts);
-        window.removeEventListener('touchmove', this._handleTouch, opts);
+        if (this.usesPointerEvents) {
+            window.removeEventListener('pointermove', this._handlePointer, opts);
+            window.removeEventListener('pointerdown', this._handlePointer, opts);
+        } else {
+            window.removeEventListener('mousemove', this._handleMouse, opts);
+            window.removeEventListener('mousedown', this._handleClick, opts);
+            window.removeEventListener('touchstart', this._handleTouch, opts);
+            window.removeEventListener('touchmove', this._handleTouch, opts);
+        }
         window.removeEventListener('scroll', this._handleScroll, opts);
         window.removeEventListener('keydown', this._handleKey, opts);
     }
@@ -122,6 +135,14 @@ class EventCollector {
     }
     _handleMouse(e) { this._pushEvent('mouse', { x: e.clientX, y: e.clientY }); }
     _handleClick(e) { this._pushEvent('click', { x: e.clientX, y: e.clientY }); }
+    _handlePointer(e) {
+        const isDown = e.type === 'pointerdown';
+        if (e.pointerType === 'mouse') {
+            this._pushEvent(isDown ? 'click' : 'mouse', { x: e.clientX, y: e.clientY });
+        } else if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+            this._pushEvent(isDown ? 'touch_start' : 'touch_move', { x: e.clientX, y: e.clientY });
+        }
+    }
     // Keyboard activity contributes to timing and modality metrics, but the
     // pressed key is deliberately never retained.
     _handleKey()    { this._pushEvent('key', {}); }
@@ -141,7 +162,7 @@ class EventCollector {
 
 class ShapeEngine {
     constructor(tuneConfig = null) {
-        this.version = "4.1.7";
+        this.version = "4.1.8";
         this.tune = tuneConfig || DEFAULT_TUNE;
         this.collector = new EventCollector(() => this._handleChunkLimit());
         

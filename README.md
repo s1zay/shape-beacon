@@ -82,6 +82,8 @@ The hosted browser bundle creates a single `window.ShapeEngine` instance.
 
 ShapeEngine emits lifecycle-v3 summaries. Visibility, page-hide, unload, and high-volume autosave reports are incremental and remain open for later updates. At the two-hour Page analytical maximum, ShapeEngine emits the controlled `max_age` final report and starts a new Page lifecycle; the server may otherwise finalize an inactive Page by its authoritative receipt-time timeout. The SDK expects standard modern browser APIs including `addEventListener`, `performance`, Web Crypto, `sessionStorage`, `navigator.sendBeacon`, and `fetch` as a fallback.
 
+Modern browsers use Pointer Events for pointing input; legacy mouse and touch listeners remain the fallback where Pointer Events are unavailable. Mouse pointers retain mouse/click semantics, while touch and pen pointers both normalize to the existing touch start/move events. The SDK does not retain pressure, tilt, contact geometry, element identity, or other rich pointer metadata.
+
 ## Development
 
 This repository contains the distributable browser SDK and its public tests. It has no runtime dependencies. Run the tests with Node.js 18 or newer:

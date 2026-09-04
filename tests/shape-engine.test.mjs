@@ -24,9 +24,17 @@ function createEventTarget() {
             current.push(listener);
             listeners.set(type, current);
         },
-        removeEventListener() {},
+        removeEventListener(type, listener) {
+            const current = listeners.get(type) || [];
+            listeners.set(type, current.filter(candidate => candidate !== listener));
+        },
         dispatch(type, event = { type }) {
             for (const listener of listeners.get(type) || []) listener(event);
+        },
+        listenerCount(type) { return (listeners.get(type) || []).length; },
+        listenerTypes() {
+            return [...listeners.entries()].filter(([, values]) => values.length > 0)
+                .map(([type]) => type).sort();
         }
     };
 }
@@ -34,7 +42,8 @@ function createEventTarget() {
 function createSdkContext({
     storage = new MemorySessionStorage(),
     startTime = 1000,
-    locationHref = 'https://example.com/home'
+    locationHref = 'https://example.com/home',
+    pointerEvents = false
 } = {}) {
     const sentPayloads = [];
     const documentTarget = createEventTarget();
@@ -60,6 +69,7 @@ function createSdkContext({
         location: { href: locationHref },
         sessionStorage: storage
     };
+    if (pointerEvents) window.PointerEvent = function PointerEvent() {};
     const context = vm.createContext({
         console,
         Date: FakeDate,
@@ -143,6 +153,165 @@ const rawEvents = count => Array.from({ length: count }, (_, index) => ({
     x: index,
     y: index
 }));
+
+const canonicalEvents = engine => JSON.parse(JSON.stringify(
+    engine.collector.events.map(({ type, ts, x, y }) => ({
+        type, ts, ...(x === undefined ? {} : { x }), ...(y === undefined ? {} : { y })
+    }))
+));
+
+function dispatchPointing(environment, { pointerEvents, pointerType }) {
+    for (let index = 0; index < 10; index++) {
+        environment.clock.now = index * 200;
+        if (pointerEvents && pointerType === 'mouse') {
+            environment.window.dispatch('pointermove', {
+                type: 'pointermove', pointerType, clientX: index, clientY: index * 2
+            });
+            environment.clock.now += 100;
+            environment.window.dispatch('pointerdown', {
+                type: 'pointerdown', pointerType, clientX: index + 1, clientY: index * 2 + 1
+            });
+        } else if (pointerEvents) {
+            environment.window.dispatch('pointerdown', {
+                type: 'pointerdown', pointerType, clientX: index, clientY: index * 2
+            });
+            environment.clock.now += 100;
+            environment.window.dispatch('pointermove', {
+                type: 'pointermove', pointerType, clientX: index + 1, clientY: index * 2 + 1
+            });
+        } else if (pointerType === 'mouse') {
+            environment.window.dispatch('mousemove', {
+                type: 'mousemove', clientX: index, clientY: index * 2
+            });
+            environment.clock.now += 100;
+            environment.window.dispatch('mousedown', {
+                type: 'mousedown', clientX: index + 1, clientY: index * 2 + 1
+            });
+        } else {
+            environment.window.dispatch('touchstart', {
+                type: 'touchstart', touches: [{ clientX: index, clientY: index * 2 }]
+            });
+            environment.clock.now += 100;
+            environment.window.dispatch('touchmove', {
+                type: 'touchmove', touches: [{ clientX: index + 1, clientY: index * 2 + 1 }]
+            });
+        }
+    }
+    environment.clock.now = 2100;
+    environment.window.scrollY = 75;
+    environment.window.dispatch('scroll', { type: 'scroll', target: environment.window });
+    environment.clock.now = 2200;
+    environment.window.dispatch('keydown', { type: 'keydown', key: 'not-retained' });
+}
+
+function capturedScenario({ pointerEvents, pointerType }) {
+    const environment = createSdkContext({ startTime: 0, pointerEvents });
+    const engine = initEngine(environment);
+    dispatchPointing(environment, { pointerEvents, pointerType });
+    const events = canonicalEvents(engine);
+    const timeline = engine._buildTimeline(engine.collector.events);
+    return {
+        environment,
+        engine,
+        events,
+        foundations: JSON.parse(JSON.stringify(engine._calculateFoundations(timeline))),
+        analysis: JSON.parse(JSON.stringify(engine._analyzeBuffer(engine.collector.events, 5000)))
+    };
+}
+
+test('Pointer capability selects one pointing listener family while preserving scroll and key', () => {
+    const legacyEnvironment = createSdkContext();
+    const legacy = initEngine(legacyEnvironment);
+    assert.deepEqual(legacy.collector.usesPointerEvents, false);
+    assert.deepEqual(legacyEnvironment.window.listenerTypes(), [
+        'beforeunload', 'keydown', 'mousedown', 'mousemove', 'pagehide', 'pageshow',
+        'scroll', 'touchmove', 'touchstart'
+    ]);
+
+    const pointerEnvironment = createSdkContext({ pointerEvents: true });
+    const pointer = initEngine(pointerEnvironment);
+    assert.equal(pointer.collector.usesPointerEvents, true);
+    assert.deepEqual(pointerEnvironment.window.listenerTypes(), [
+        'beforeunload', 'keydown', 'pagehide', 'pageshow', 'pointerdown', 'pointermove', 'scroll'
+    ]);
+    for (const legacyType of ['mousedown', 'mousemove', 'touchmove', 'touchstart']) {
+        assert.equal(pointerEnvironment.window.listenerCount(legacyType), 0);
+    }
+});
+
+test('legacy and Pointer mouse input normalize to identical canonical activity', () => {
+    const legacy = capturedScenario({ pointerEvents: false, pointerType: 'mouse' });
+    const pointer = capturedScenario({ pointerEvents: true, pointerType: 'mouse' });
+    assert.deepEqual(pointer.events, legacy.events);
+    assert.deepEqual(pointer.foundations, legacy.foundations);
+    assert.deepEqual(pointer.analysis, legacy.analysis);
+    assert.equal(pointer.analysis.device, 'desktop');
+});
+
+test('legacy touch, Pointer touch, and Pointer pen are analytically equivalent', () => {
+    const legacyTouch = capturedScenario({ pointerEvents: false, pointerType: 'touch' });
+    const pointerTouch = capturedScenario({ pointerEvents: true, pointerType: 'touch' });
+    const pointerPen = capturedScenario({ pointerEvents: true, pointerType: 'pen' });
+
+    for (const candidate of [pointerTouch, pointerPen]) {
+        assert.deepEqual(candidate.events, legacyTouch.events);
+        assert.deepEqual(candidate.foundations, legacyTouch.foundations);
+        assert.deepEqual(candidate.analysis, legacyTouch.analysis);
+        assert.equal(candidate.analysis.device, 'mobile');
+        assert.equal(candidate.events.some(event => event.type === 'pen'), false);
+    }
+});
+
+test('Pointer environments ignore compatibility pointing events and unknown pointer types', () => {
+    const environment = createSdkContext({ pointerEvents: true, startTime: 0 });
+    const engine = initEngine(environment);
+    environment.window.dispatch('pointerdown', {
+        type: 'pointerdown', pointerType: 'pen', clientX: 4, clientY: 8
+    });
+    environment.window.dispatch('mousedown', { type: 'mousedown', clientX: 4, clientY: 8 });
+    environment.window.dispatch('mousemove', { type: 'mousemove', clientX: 5, clientY: 9 });
+    environment.window.dispatch('touchstart', {
+        type: 'touchstart', touches: [{ clientX: 4, clientY: 8 }]
+    });
+    environment.window.dispatch('pointermove', {
+        type: 'pointermove', pointerType: '', clientX: 10, clientY: 10
+    });
+    environment.window.dispatch('pointermove', {
+        type: 'pointermove', pointerType: 'unknown', clientX: 11, clientY: 11
+    });
+
+    assert.deepEqual(canonicalEvents(engine), [
+        { type: 'touch_start', ts: 0, x: 4, y: 8 }
+    ]);
+});
+
+test('Pointer touch and pen moves normalize without requiring retained pointer state', () => {
+    for (const pointerType of ['touch', 'pen']) {
+        const environment = createSdkContext({ pointerEvents: true, startTime: 0 });
+        const engine = initEngine(environment);
+        environment.window.dispatch('pointermove', {
+            type: 'pointermove', pointerType, clientX: 2, clientY: 3
+        });
+        assert.deepEqual(canonicalEvents(engine), [
+            { type: 'touch_move', ts: 0, x: 2, y: 3 }
+        ]);
+    }
+});
+
+test('collector start and stop remain idempotent for Pointer listeners', () => {
+    const environment = createSdkContext({ pointerEvents: true });
+    const engine = initEngine(environment);
+    engine.start();
+    assert.equal(environment.window.listenerCount('pointermove'), 1);
+    engine.stop();
+    engine.stop();
+    assert.equal(environment.window.listenerCount('pointermove'), 0);
+    assert.equal(environment.window.listenerCount('scroll'), 0);
+    engine.start();
+    engine.start();
+    assert.equal(environment.window.listenerCount('pointermove'), 1);
+    assert.equal(environment.window.listenerCount('scroll'), 1);
+});
 
 test('engagement gate uses the inclusive 5000 ms and 20 event boundaries', () => {
     const engine = initEngine(createSdkContext());
@@ -397,7 +566,7 @@ test('payload uses lifecycle-v3 field names and required scalar types', () => {
 
     assert.equal(payload.payloadSchema, 'v3');
     assert.equal(payload.lifecycle_semantics_version, 'v3');
-    assert.equal(payload.engineVersion, '4.1.7');
+    assert.equal(payload.engineVersion, '4.1.8');
     assert.equal(payload.tuneVersion, '2.17');
     assert.equal(typeof payload.page_session_id, 'string');
     assert.equal(typeof payload.domain_session_id, 'string');
