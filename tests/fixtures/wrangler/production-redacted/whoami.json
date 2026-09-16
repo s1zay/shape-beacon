@@ -1,0 +1,11 @@
+{
+  "loggedIn": true,
+  "authType": "OAuth Token",
+  "email": "<REDACTED_EMAIL>",
+  "accounts": [
+    {
+      "id": "c8923ddc9f252b8b35696c5278e3855b",
+      "name": "<REDACTED_ACCOUNT_NAME>"
+    }
+  ]
+}

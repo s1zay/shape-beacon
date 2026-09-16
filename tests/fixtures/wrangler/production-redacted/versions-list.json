@@ -1,0 +1,16 @@
+[
+  {
+    "id": "39d8cea2-49df-4282-9414-4f78519a44ae",
+    "number": 42,
+    "metadata": {
+      "created_on": "2026-09-04T02:49:33.365614Z",
+      "source": "wrangler",
+      "author_id": "<REDACTED_AUTHOR_ID>",
+      "author_email": "<REDACTED_EMAIL>",
+      "has_preview": true
+    },
+    "annotations": {
+      "workers/triggered_by": "version_upload"
+    }
+  }
+]

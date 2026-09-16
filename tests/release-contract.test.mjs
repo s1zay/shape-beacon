@@ -22,7 +22,9 @@ import {
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const fixtures = join(root, 'tests/fixtures/wrangler');
+const productionFixtures = join(fixtures, 'production-redacted');
 const fixture = name => readFile(join(fixtures, name), 'utf8');
+const productionFixture = name => readFile(join(productionFixtures, name), 'utf8');
 const sha256 = value => createHash('sha256').update(value).digest('hex');
 
 test('only the exact pinned Wrangler version is accepted', () => {
@@ -90,6 +92,43 @@ test('documented whoami and versions JSON contracts are parsed strictly', () => 
     }]));
     assert.equal(versions.length, 1);
     assert.throws(() => parseVersionsListJson('[{"id":"not-a-uuid"}]'), /must be a UUID/);
+});
+
+test('redacted production identity and deployment fixtures parse and agree on the active baseline', async () => {
+    const accountId = 'c8923ddc9f252b8b35696c5278e3855b';
+    const identity = parseWhoamiJson(await productionFixture('whoami.json'), {
+        expectedAccountId: accountId,
+        expectedAccountName: '<REDACTED_ACCOUNT_NAME>'
+    });
+    const deployments = parseDeploymentsListJson(await productionFixture('deployments-list.json'));
+    const status = parseDeploymentStatusJson(await productionFixture('deployments-status.json'));
+    const versions = parseVersionsListJson(await productionFixture('versions-list.json'));
+
+    assert.equal(identity.authType, 'OAuth Token');
+    assert.equal(identity.account.id, accountId);
+    assert.equal(deployments.length, 1);
+    assert.equal(status.id, '92cc558d-835a-4028-af18-fc0552586242');
+    assert.equal(deployments[0].id, status.id);
+    assert.deepEqual(deployments[0].versions, status.versions);
+    assert.deepEqual(status.versions, [{
+        version_id: '39d8cea2-49df-4282-9414-4f78519a44ae', percentage: 100
+    }]);
+    assert.equal(versions.length, 1);
+    assert.equal(versions[0].id, status.versions[0].version_id);
+    assert.equal(versions[0].metadata.created_on, '2026-09-04T02:49:33.365614Z');
+    assert.equal('worker_name' in status, false);
+    assert.equal('account_id' in status, false);
+});
+
+test('redacted production fixtures contain no credential-bearing fields or unredacted email', async () => {
+    for (const name of ['whoami.json', 'deployments-list.json', 'deployments-status.json',
+        'versions-list.json']) {
+        const text = await productionFixture(name);
+        assert.doesNotMatch(text, /"(?:token|secret|authorization|cookie|password|api.?key)[^"]*"\s*:/i,
+            `${name} contains a credential-bearing field`);
+        assert.doesNotMatch(text, /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i,
+            `${name} contains an unredacted email address`);
+    }
 });
 
 test('readback verifier classifies exact, stale, unknown, mismatched, and oversized bodies', async () => {
