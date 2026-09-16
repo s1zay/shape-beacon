@@ -3,7 +3,7 @@
  * Regenerate with: npm run build
  * ShapeEngine SDK v4.1.8 (Bundled with Tune v2.17)
  * Payload schema v3; lifecycle semantics v3
- * Source commit bfe944d8bb96c083033673ba0763bec4bdc630b6 (clean)
+ * Source commit 2a5b71bbac177e4665dcb2f8e69fc4026c589687 (clean)
  */
 const SDK_METADATA = Object.freeze({
     engineVersion: '4.1.8',
