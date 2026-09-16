@@ -31,7 +31,6 @@ const git = (...args) => {
     }
 };
 
-const sourceCommit = git('rev-parse', 'HEAD');
 const provenanceInputs = [
     'src',
     'scripts',
@@ -44,7 +43,26 @@ const provenanceInputs = [
 const worktreeStatus = git(
     'status', '--porcelain=v1', '--untracked-files=all', '--', ...provenanceInputs
 );
-const sourceState = worktreeStatus ? 'dirty' : 'clean';
+const headCommit = git('rev-parse', 'HEAD');
+
+let sourceCommit = headCommit;
+try {
+    const existingManifest = JSON.parse(await readFile(join(distDirectory, manifestName), 'utf8'));
+    const frozenCommit = existingManifest.sourceCommit;
+    if (/^[0-9a-f]{40}$/.test(frozenCommit)) {
+        const committedInputDrift = git(
+            'diff', '--name-only', frozenCommit, headCommit, '--', ...provenanceInputs
+        );
+        if (!committedInputDrift) sourceCommit = frozenCommit;
+    }
+} catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+}
+
+const committedInputDrift = git(
+    'diff', '--name-only', sourceCommit, headCommit, '--', ...provenanceInputs
+);
+const sourceState = worktreeStatus || committedInputDrift ? 'dirty' : 'clean';
 
 const banner = `/**
  * GENERATED FILE — DO NOT EDIT DIRECTLY.
