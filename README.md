@@ -86,13 +86,36 @@ Modern browsers use Pointer Events for pointing input; legacy mouse and touch li
 
 ## Development
 
-This repository contains the distributable browser SDK and its public tests. It has no runtime dependencies. Run the tests with Node.js 18 or newer:
+The canonical SDK implementation is in `src/`:
+
+- `version.js` is the single source for engine, Tune, payload-schema, and lifecycle-semantics versions.
+- `tune.js` contains the default Tune configuration.
+- `event-collector.js` owns browser input collection and normalization.
+- `shape-engine.js` owns session lifecycle, analysis, payload construction, and transport.
+- `browser-entry.js` installs the public `window.ShapeEngine` instance.
+
+The SDK has no browser runtime dependencies. Development and CI use Node.js 22 and the exact Rollup version pinned by `package-lock.json`. Install the toolchain and build the distributable with:
 
 ```sh
-node tests/shape-engine.test.mjs
+npm ci
+npm run build
 ```
 
-The distributable browser SDK is [dist/shape-engine-bundled.js](dist/shape-engine-bundled.js). `wrangler.jsonc` is a minimal static-asset configuration for hosting that bundle.
+`dist/shape-engine-bundled.js` and its JSON manifest are generated and committed release artifacts. Do not edit them directly. A build banner and manifest record the source commit, clean/dirty source state, centralized versions, pinned bundler version, and artifact SHA-256. The metadata contains no wall-clock value, so repeated builds from the same repository state are deterministic.
+
+Verify that a temporary build is byte-identical to the committed artifacts without changing tracked files:
+
+```sh
+npm run build:check
+```
+
+Run all behavioral and build-provenance tests with:
+
+```sh
+npm test
+```
+
+`wrangler.jsonc` is a minimal static-asset configuration for hosting the generated bundle. Building and deployment are separate operations: none of the build or test commands deploys, publishes, or modifies a hosted SDK.
 
 ## License
 
