@@ -5,12 +5,13 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { SDK_METADATA } from '../src/version.js';
+import { WRANGLER_VERSION, parseWranglerVersion } from './release-contract.mjs';
 
 const defaultRepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const artifactRelativePath = 'dist/shape-engine-bundled.js';
 const manifestRelativePath = 'dist/shape-engine-bundled.manifest.json';
 const wranglerConfigRelativePath = 'wrangler.jsonc';
-const deploymentCommand = 'npx wrangler deploy --config wrangler.jsonc';
+const deploymentCommand = 'npx --no-install wrangler deploy --config wrangler.jsonc';
 const hostedUrls = Object.freeze({
     workersDev: 'https://shape-beacon.anthonyyerhot.workers.dev/shape-engine-bundled.js',
     canonical: 'https://engine.shapebeacon.com/shape-engine-bundled.js',
@@ -38,6 +39,10 @@ function runLocalVerification(repoRoot, command, args) {
     execFileSync(command, args, { cwd: repoRoot, stdio: 'inherit' });
 }
 
+function runLocalCapture(repoRoot, command, args) {
+    return execFileSync(command, args, { cwd: repoRoot, encoding: 'utf8' });
+}
+
 function assertSha(value, field) {
     assert.match(value, /^[0-9a-f]{64}$/, `${field} must be a lowercase SHA-256`);
 }
@@ -49,7 +54,8 @@ function assertCommit(value, field) {
 export async function verifyRelease({
     repoRoot = defaultRepoRoot,
     git = createGit(repoRoot),
-    runVerification = runLocalVerification
+    runVerification = runLocalVerification,
+    runCapture = runLocalCapture
 } = {}) {
     assert.equal(git('status', '--porcelain=v1', '--untracked-files=all'), '',
         'release requires a completely clean worktree');
@@ -80,6 +86,11 @@ export async function verifyRelease({
     const packageMetadata = JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8'));
     assert.equal(packageMetadata.devDependencies?.rollup, manifest.toolchain.bundlerVersion,
         'manifest Rollup version does not match the pinned package version');
+    assert.equal(packageMetadata.devDependencies?.wrangler, WRANGLER_VERSION,
+        'package must pin the exact reviewed Wrangler version');
+    const wranglerVersion = parseWranglerVersion(
+        runCapture(repoRoot, 'npx', ['--no-install', 'wrangler', '--version'])
+    );
 
     const wranglerConfig = JSON.parse(await readFile(join(repoRoot, wranglerConfigRelativePath), 'utf8'));
     assert.equal(wranglerConfig.assets?.directory, './dist',
@@ -122,6 +133,7 @@ export async function verifyRelease({
         payloadSchema: manifest.versions.payloadSchema,
         lifecycleSemantics: manifest.versions.lifecycleSemantics,
         rollupVersion: manifest.toolchain.bundlerVersion,
+        wranglerVersion,
         wranglerConfigPath: wranglerConfigRelativePath,
         deploymentCommand,
         hostedReadbackUrls: hostedUrls

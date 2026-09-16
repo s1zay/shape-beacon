@@ -30,7 +30,7 @@ async function fixture({ dirty = false, manifestSha = artifactSha256, sourceComm
         toolchain: { bundler: 'rollup', bundlerVersion: '4.63.3' }
     }));
     await writeFile(join(repoRoot, 'package.json'), JSON.stringify({
-        devDependencies: { rollup: '4.63.3' }
+        devDependencies: { rollup: '4.63.3', wrangler: '4.132.0' }
     }));
     await writeFile(join(repoRoot, 'wrangler.jsonc'), JSON.stringify({
         assets: { directory: './dist' }
@@ -52,7 +52,14 @@ async function fixture({ dirty = false, manifestSha = artifactSha256, sourceComm
         throw new Error(`unexpected git command: ${key}`);
     };
     const runVerification = (_root, command, args) => commands.push([command, ...args].join(' '));
-    return { repoRoot, git, commands, runVerification, cleanup: () => rm(repoRoot, { recursive: true }) };
+    const runCapture = (_root, command, args) => {
+        commands.push([command, ...args].join(' '));
+        return '4.132.0\n';
+    };
+    return {
+        repoRoot, git, commands, runVerification, runCapture,
+        cleanup: () => rm(repoRoot, { recursive: true })
+    };
 }
 
 test('clean valid repository passes and produces the exact release plan', async () => {
@@ -68,9 +75,13 @@ test('clean valid repository passes and produces the exact release plan', async 
         assert.equal(plan.payloadSchema, 'v3');
         assert.equal(plan.lifecycleSemantics, 'v3');
         assert.equal(plan.rollupVersion, '4.63.3');
-        assert.equal(plan.deploymentCommand, 'npx wrangler deploy --config wrangler.jsonc');
-        assert.deepEqual(environment.commands, ['npm test', 'npm run build:check']);
-        assert.equal(environment.commands.some(command => command.includes('wrangler')), false);
+        assert.equal(plan.wranglerVersion, '4.132.0');
+        assert.equal(plan.deploymentCommand,
+            'npx --no-install wrangler deploy --config wrangler.jsonc');
+        assert.deepEqual(environment.commands, [
+            'npx --no-install wrangler --version', 'npm test', 'npm run build:check'
+        ]);
+        assert.equal(environment.commands.some(command => command.includes('wrangler deploy')), false);
     } finally {
         await environment.cleanup();
     }
@@ -120,7 +131,7 @@ test('invalid source-to-artifact provenance relationship is rejected', async () 
     };
     try {
         await assert.rejects(() => verifyRelease(environment), /not an ancestor/);
-        assert.deepEqual(environment.commands, []);
+        assert.deepEqual(environment.commands, ['npx --no-install wrangler --version']);
     } finally {
         await environment.cleanup();
     }
