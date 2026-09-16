@@ -89,7 +89,9 @@ export async function verifyRelease({
     assert.equal(packageMetadata.devDependencies?.wrangler, WRANGLER_VERSION,
         'package must pin the exact reviewed Wrangler version');
     const wranglerVersion = parseWranglerVersion(
-        runCapture(repoRoot, join(repoRoot, 'node_modules/.bin/wrangler'), ['--version'])
+        runCapture(repoRoot, process.execPath, [
+            join(repoRoot, 'node_modules/wrangler/bin/wrangler.js'), '--version'
+        ])
     );
 
     const wranglerConfig = JSON.parse(await readFile(join(repoRoot, wranglerConfigRelativePath), 'utf8'));
