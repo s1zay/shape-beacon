@@ -1,7 +1,7 @@
 {
   "artifact": "dist/shape-engine-bundled.js",
-  "sha256": "3f18dcd8a042f1aba9e2d079bf6439606b1e0e4e8c81d058234ed4037c54e754",
-  "sourceCommit": "4ab03c0d2bfda3abc8f00a223f6b66cdce0d373b",
+  "sha256": "a2c95e4700a5b152fcacb1594e4aca4189a32e472cf3ac7001f37576435218df",
+  "sourceCommit": "bfe944d8bb96c083033673ba0763bec4bdc630b6",
   "sourceState": "clean",
   "versions": {
     "engine": "4.1.8",
