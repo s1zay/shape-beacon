@@ -1,0 +1,16 @@
+{
+  "artifact": "dist/shape-engine-bundled.js",
+  "sha256": "3f18dcd8a042f1aba9e2d079bf6439606b1e0e4e8c81d058234ed4037c54e754",
+  "sourceCommit": "4ab03c0d2bfda3abc8f00a223f6b66cdce0d373b",
+  "sourceState": "clean",
+  "versions": {
+    "engine": "4.1.8",
+    "tune": "2.17",
+    "payloadSchema": "v3",
+    "lifecycleSemantics": "v3"
+  },
+  "toolchain": {
+    "bundler": "rollup",
+    "bundlerVersion": "4.63.3"
+  }
+}

@@ -1,11 +1,24 @@
 /**
- * ShapeEngine SDK v4.1.8 (Bundled with Tune file)
- * Includes Tune v2.17, Configuration Init, Client Deduplication, Smart Media Detection, 
- * Tab-Switch Lifecycle, Weighted Chunking, & Auto-Save Protocol
+ * GENERATED FILE — DO NOT EDIT DIRECTLY.
+ * Regenerate with: npm run build
+ * ShapeEngine SDK v4.1.8 (Bundled with Tune v2.17)
+ * Payload schema v3; lifecycle semantics v3
+ * Source commit 4ab03c0d2bfda3abc8f00a223f6b66cdce0d373b (clean)
  */
+const SDK_METADATA = Object.freeze({
+    engineVersion: '4.1.8',
+    tuneVersion: '2.17',
+    payloadSchema: 'v3',
+    lifecycleSemanticsVersion: 'v3'
+});
+
+const ENGINE_VERSION = SDK_METADATA.engineVersion;
+const TUNE_VERSION = SDK_METADATA.tuneVersion;
+const PAYLOAD_SCHEMA = SDK_METADATA.payloadSchema;
+const LIFECYCLE_SEMANTICS_VERSION = SDK_METADATA.lifecycleSemanticsVersion;
 
 const DEFAULT_TUNE = {
-  "version": "2.17",
+  "version": TUNE_VERSION,
   "metrics": {
     "intensity": {
       "base": 0.0,
@@ -62,17 +75,9 @@ const DEFAULT_TUNE = {
     "drift": [0.3, 0.4, 0.7, 0.6],
     "chaotic": [0.7, 0.3, 0.7, 0.2],
     "flat": [0.1, 0.1, 0.1, 0.6],
-    "ambient": [0.5, 0.5, 0.5, 0.5] 
+    "ambient": [0.5, 0.5, 0.5, 0.5]
   }
 };
-
-const MIN_ENGAGED_DURATION_MS = 5000;
-const MIN_ENGAGED_EVENT_COUNT = 20;
-const DOMAIN_SESSION_LIFETIME_MS = 2 * 60 * 60 * 1000;
-const PAGE_SESSION_ANALYTICAL_MAX_MS = 2 * 60 * 60 * 1000;
-
-const isUndeterminedEngagement = (durationMs, eventCount) =>
-    durationMs < MIN_ENGAGED_DURATION_MS || eventCount < MIN_ENGAGED_EVENT_COUNT;
 
 class EventCollector {
     constructor(onLimitReached) {
@@ -120,11 +125,11 @@ class EventCollector {
         window.removeEventListener('scroll', this._handleScroll, opts);
         window.removeEventListener('keydown', this._handleKey, opts);
     }
-    reset() { 
-        this.events = []; 
+    reset() {
+        this.events = [];
     }
-    getRawEvents() { 
-        return this.events; 
+    getRawEvents() {
+        return this.events;
     }
     _pushEvent(type, data) {
         this.events.push({ type, ts: performance.now(), ...data });
@@ -153,19 +158,27 @@ class EventCollector {
             this._pushEvent(type, { x: touch.clientX, y: touch.clientY });
         }
     }
-    _handleScroll(e) { 
+    _handleScroll(e) {
         const target = e.target === document ? window : e.target;
         const scrollY = target.scrollY !== undefined ? target.scrollY : target.scrollTop;
-        this._pushEvent('scroll', { y: scrollY }); 
+        this._pushEvent('scroll', { y: scrollY });
     }
 }
 
+const MIN_ENGAGED_DURATION_MS = 5000;
+const MIN_ENGAGED_EVENT_COUNT = 20;
+const DOMAIN_SESSION_LIFETIME_MS = 2 * 60 * 60 * 1000;
+const PAGE_SESSION_ANALYTICAL_MAX_MS = 2 * 60 * 60 * 1000;
+
+const isUndeterminedEngagement = (durationMs, eventCount) =>
+    durationMs < MIN_ENGAGED_DURATION_MS || eventCount < MIN_ENGAGED_EVENT_COUNT;
+
 class ShapeEngine {
     constructor(tuneConfig = null) {
-        this.version = "4.1.8";
+        this.version = ENGINE_VERSION;
         this.tune = tuneConfig || DEFAULT_TUNE;
         this.collector = new EventCollector(() => this._handleChunkLimit());
-        
+
         this.pageSessionStart = Date.now();
         this.chunkStart = this.pageSessionStart;
         this.pageSessionId = this._generateId();
@@ -175,14 +188,14 @@ class ShapeEngine {
         this.beaconSequence = 0;
         this.cumulativeSummary = null;
         this.chunkHistory = [];
-        
+
         this.config = { endpoint: null, projectId: 'default', apiKey: null };
         this._hasSetupTriggers = false;
         this._hasSent = false;
         this._pageMaxAgeTimer = null;
         this.state = { status: 'offline', results: { timeline: [], foundations: {}, metrics: {}, shapes: {}, device: 'unknown' } };
     }
-    
+
     _generateId() {
         if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
         return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
@@ -271,7 +284,7 @@ class ShapeEngine {
                 const isShowing = document.visibilityState === 'visible' || event.type === 'pageshow';
 
                 if (isHiding) {
-                    if (this._hasSent) return; 
+                    if (this._hasSent) return;
                     this._hasSent = true;
                     this.forceSend();
                 } else if (isShowing) {
@@ -300,7 +313,7 @@ class ShapeEngine {
         this.collector.start();
         this.state.status = 'running';
     }
-    
+
     stop() {
         if (this.state.status === 'offline') return;
         this.collector.stop();
@@ -310,11 +323,11 @@ class ShapeEngine {
     _handleChunkLimit() {
         const rawEvents = this.collector.getRawEvents();
         const duration = Date.now() - this.chunkStart;
-        
+
         // Analyze the 10k chunk and store the math
         const chunkData = this._analyzeBuffer(rawEvents, duration);
         this.chunkHistory.push(chunkData);
-        
+
         // Clear RAM instantly without O(N) array shifting
         this.collector.reset();
         this.chunkStart = Date.now();
@@ -371,8 +384,8 @@ class ShapeEngine {
         return {
             eventCount: rawEvents.length,
             sessionDurationMs: durationMs,
-            device: device, 
-            metrics: metrics, 
+            device: device,
+            metrics: metrics,
             shapes: shapes
         };
     }
@@ -400,7 +413,7 @@ class ShapeEngine {
             totalEvents += chunk.eventCount;
             totalDuration += chunk.sessionDurationMs;
             deviceSet.add(chunk.device);
-            
+
             for (const m in mergedMetrics) mergedMetrics[m] += (chunk.metrics[m] || 0) * chunk.eventCount;
             for (const s in mergedShapes) mergedShapes[s] += (chunk.shapes[s] || 0) * chunk.eventCount;
         }
@@ -436,10 +449,10 @@ class ShapeEngine {
     analyze() {
         const rawEvents = this.collector.getRawEvents();
         const duration = Date.now() - this.chunkStart;
-        
+
         // Analyze final active buffer
         const currentData = this._analyzeBuffer(rawEvents, duration);
-        
+
         // Combine all chunks into single footprint
         const merged = this._mergeChunks(currentData);
 
@@ -459,7 +472,7 @@ class ShapeEngine {
             events: [...rawEvents] // Attached for local Demo UI compatibility only
         };
     }
-    
+
     getResults() { return this.state.results; }
 
     _getPageUrl() {
@@ -484,10 +497,10 @@ class ShapeEngine {
         const isMaxAgeFinal = Date.now() - this.pageSessionStart >= PAGE_SESSION_ANALYTICAL_MAX_MS;
 
         this.analyze();
-        
+
         // FIX: Deep clone the results so we don't accidentally mutate local UI state
         const data = { ...this.getResults() };
-        
+
         // Keep the transmitted payload to summary data only.
         delete data.events;
         delete data.timeline;
@@ -495,8 +508,8 @@ class ShapeEngine {
         this.beaconSequence += 1;
 
         const payload = JSON.stringify({
-            payloadSchema: "v3",
-            lifecycle_semantics_version: "v3",
+            payloadSchema: PAYLOAD_SCHEMA,
+            lifecycle_semantics_version: LIFECYCLE_SEMANTICS_VERSION,
             page_session_id: this.pageSessionId,
             domain_session_id: this.domainSessionId,
             page_session_started_at: this.pageSessionStart,
@@ -568,7 +581,7 @@ class ShapeEngine {
         if (velocities.length > 0) {
             const avgVel = velocities.reduce((a, b) => a + b, 0) / velocities.length;
             const varVel = velocities.reduce((a, b) => a + Math.pow(b - avgVel, 2), 0) / velocities.length;
-            f.velocityVolatility = this._clamp(Math.sqrt(varVel) / 5.0); 
+            f.velocityVolatility = this._clamp(Math.sqrt(varVel) / 5.0);
         }
         if (spatialEvents > 2) f.directionalInflection = this._clamp(inflectionCount / spatialEvents);
         f.modalitySwitching = this._clamp(switchCount / timeline.length);
@@ -594,22 +607,22 @@ class ShapeEngine {
         const OUTLIER_THRESHOLD = 0.7;
         if (minHumanDist > OUTLIER_THRESHOLD && distances['ambient']) distances['ambient'] *= Math.pow(minHumanDist / OUTLIER_THRESHOLD, 6);
         for (const invDist of Object.values(distances)) totalInvDist += invDist;
-        
+
         const shapes = { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 0 };
         if (totalInvDist > 0) {
             for (const shape in distances) if (shapes[shape] !== undefined) shapes[shape] = this._clamp(distances[shape] / totalInvDist);
         }
         return shapes;
     }
-    
-    _clamp(val) { 
+
+    _clamp(val) {
         const clamped = Math.max(0, Math.min(1, isNaN(val) ? 0 : val));
         return Math.round(clamped * 10000) / 10000;
     }
 }
 
-// --- AUTO INITIALIZATION ---
+// Preserve the classic browser SDK API: one instance on window, not a constructor export.
 if (typeof window !== 'undefined') {
     window.ShapeEngine = new ShapeEngine();
     // Do not auto-start in the demo UI.
-                                             }
+}
