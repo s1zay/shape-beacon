@@ -28,3 +28,6 @@ jobs:
 
       - name: Verify generated artifacts
         run: npm run build:check
+
+      - name: Verify release readiness
+        run: npm run release:check

@@ -33,12 +33,8 @@ const git = (...args) => {
 
 const provenanceInputs = [
     'src',
-    'scripts',
-    'tests',
-    'package.json',
+    'scripts/build.mjs',
     'package-lock.json',
-    'README.md',
-    '.github'
 ];
 const worktreeStatus = git(
     'status', '--porcelain=v1', '--untracked-files=all', '--', ...provenanceInputs

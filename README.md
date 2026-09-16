@@ -117,6 +117,15 @@ npm test
 
 `wrangler.jsonc` is a minimal static-asset configuration for hosting the generated bundle. Building and deployment are separate operations: none of the build or test commands deploys, publishes, or modifies a hosted SDK.
 
+Before a separately authorized manual release, validate the clean repository, committed artifact provenance, tests, and deterministic build:
+
+```sh
+npm run release:check
+npm run release:dry-run
+```
+
+The dry-run prints a machine-readable release plan and evidence template marked `deployed: false`. It does not invoke Wrangler, contact Cloudflare, require production credentials, write evidence, or change local/generated files. Deployment is intentionally not implemented by the release script.
+
 ## License
 
 [MIT](LICENSE)
