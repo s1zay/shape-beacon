@@ -79,7 +79,8 @@ test('clean valid repository passes and produces the exact release plan', async 
         assert.equal(plan.deploymentCommand,
             'npx --no-install wrangler deploy --config wrangler.jsonc');
         assert.deepEqual(environment.commands, [
-            'npx --no-install wrangler --version', 'npm test', 'npm run build:check'
+            `${environment.repoRoot}/node_modules/.bin/wrangler --version`,
+            'npm test', 'npm run build:check'
         ]);
         assert.equal(environment.commands.some(command => command.includes('wrangler deploy')), false);
     } finally {
@@ -131,7 +132,9 @@ test('invalid source-to-artifact provenance relationship is rejected', async () 
     };
     try {
         await assert.rejects(() => verifyRelease(environment), /not an ancestor/);
-        assert.deepEqual(environment.commands, ['npx --no-install wrangler --version']);
+        assert.deepEqual(environment.commands, [
+            `${environment.repoRoot}/node_modules/.bin/wrangler --version`
+        ]);
     } finally {
         await environment.cleanup();
     }
