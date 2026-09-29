@@ -1,5 +1,7 @@
 # SDK Source, Build, and Host Provenance Report
 
+> **Historical snapshot (2026-09-15).** This report describes the repository before the source extraction and reproducible build. Its statements that `dist/` was the only implementation and that no build/CI/release tooling existed are superseded. See [the 2026-09-29 public repository and hosted SDK audit](PUBLIC_REPO_AND_HOSTED_SDK_RELEASE_READINESS_2026-09-29.md) for the current state. The observations and hashes below remain dated evidence.
+
 Date of investigation: 2026-09-15 (America/Chicago)
 Public SDK repository: `/home/anthony/shape-beacon`
 Read-only supporting inspection: `/home/anthony/on_shape`

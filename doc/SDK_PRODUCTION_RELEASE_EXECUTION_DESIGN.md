@@ -1,5 +1,7 @@
 # SDK Production Release Execution Design
 
+> **Historical design (2026-09-15).** Later commits pinned Wrangler 4.132.0 and added read-only release verification and production CLI contract capture. Statements below that Wrangler is unpinned or its read contract has not been captured describe this design's starting state. See [the 2026-09-29 public repository and hosted SDK audit](PUBLIC_REPO_AND_HOSTED_SDK_RELEASE_READINESS_2026-09-29.md) for current release status.
+
 Date: 2026-09-15 (America/Chicago)
 
 Status: **DESIGN REVIEWED — MUTATING IMPLEMENTATION AND DEPLOYMENT NOT AUTHORIZED**

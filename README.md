@@ -8,6 +8,8 @@ Shape Beacon analyzes interaction patterns in the browser and emits compact beha
 
 Shape Beacon is the hosted product and analytics service. **ShapeEngine** is the dependency-free browser SDK in this repository that performs the local analysis.
 
+The current committed and hosted browser bundle is **ShapeEngine 4.1.8**, with **Tune 2.17**, **payload schema v3**, and **lifecycle semantics v3**. The release artifact and its SHA-256 are recorded in [the dist manifest](dist/shape-engine-bundled.manifest.json).
+
 ## What Shape Beacon measures
 
 ShapeEngine turns interaction timing and movement into four normalized metrics:
@@ -34,6 +36,8 @@ Shape Beacon is behavioral-signal analytics, not conversion analytics. It does n
 
 Raw interaction events exist transiently in browser memory so ShapeEngine can calculate its summaries. Emitted telemetry contains compact metrics and shape scores plus limited session and delivery metadata.
 
+That metadata includes a fresh Page Session ID for each document, a Domain Session ID that can continue across same-tab navigation for up to two hours, and the page URL's origin and path. The SDK does not create a persistent user ID.
+
 - Raw pointer, touch, and click coordinates are not transmitted.
 - Pressed keyboard values are neither retained nor transmitted; keyboard activity is represented only as generic activity.
 - Page contents are not inspected or transmitted.
@@ -56,6 +60,20 @@ The dashboard-generated installation snippet is authoritative for your domain an
 For managed first-party integrations, the current path is `/_sb-metrics/`. The legacy `/metrics/` path should not be used as the preferred modern integration. When the wizard offers a first-party proxy, use the path and configuration it generates.
 
 The dashboard-generated snippet determines the exact script, endpoint, and configuration. The browser API key is a public write credential embedded in client-side code, not a server secret.
+
+For a manual direct integration on a registered domain, the current browser API takes this form. Use the key issued for that domain by the dashboard; use the wizard's exact snippet when it specifies a different endpoint or a first-party proxy:
+
+```html
+<script src="https://engine.shapebeacon.com/shape-engine-bundled.js"></script>
+<script>
+  window.ShapeEngine.init({
+    endpoint: 'https://engine.shapebeacon.com/',
+    apiKey: 'YOUR_DOMAIN_API_KEY'
+  });
+</script>
+```
+
+The script URL serves the SDK; `endpoint` receives its summary reports. `projectId` is optional and defaults to `default`. Collection requires a valid domain-bound key and a site accepted by the receiver's origin/referer checks; copying the snippet to another site does not authorize that site.
 
 ## Page and Cross-Page analytics
 

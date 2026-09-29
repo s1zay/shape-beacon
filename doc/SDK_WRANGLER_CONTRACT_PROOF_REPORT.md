@@ -1,5 +1,7 @@
 # SDK Wrangler Contract Proof Report
 
+> **Historical proof boundary (2026-09-15).** The authenticated read-only production contract capture requested below was completed later; see [SDK Production Read-Only Contract Capture Report](SDK_PRODUCTION_READ_ONLY_CONTRACT_CAPTURE_REPORT.md). For the current SDK and hosted-byte state, see [the 2026-09-29 audit](PUBLIC_REPO_AND_HOSTED_SDK_RELEASE_READINESS_2026-09-29.md).
+
 ## Scope and outcome
 
 This slice pinned Wrangler, proved its credential-free local preparation path, and added strict
