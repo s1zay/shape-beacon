@@ -8,7 +8,7 @@ Shape Beacon analyzes interaction patterns in the browser and emits compact beha
 
 Shape Beacon is the hosted product and analytics service. **ShapeEngine** is the dependency-free browser SDK in this repository that performs the local analysis.
 
-The current committed and hosted browser bundle is **ShapeEngine 4.1.8**, with **Tune 2.17**, **payload schema v3**, and **lifecycle semantics v3**. The release artifact and its SHA-256 are recorded in [the dist manifest](dist/shape-engine-bundled.manifest.json).
+The current committed and hosted browser bundle is **ShapeEngine 4.1.8**, with **Tune 2.17**, **payload schema v3**, and **lifecycle semantics v3**. The release artifact and its SHA-256 are recorded in [the dist manifest](dist/shape-engine-bundled.manifest.json). The matching [ShapeEngine 4.1.8 GitHub Release](https://github.com/s1zay/shape-beacon/releases/tag/v4.1.8) provides the public release identity and downloadable bundle.
 
 ## What Shape Beacon measures
 

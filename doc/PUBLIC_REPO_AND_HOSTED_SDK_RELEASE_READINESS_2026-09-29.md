@@ -1,3 +1,5 @@
+> **Historical audit snapshot (2026-09-29).** The release-identity and unpublished-documentation gaps below were resolved after this audit. On 2026-10-03, public `main` matched local commit `19d8ea436b9f901c58383b06ced57cbd5fda1f80`, the latest published GitHub Release was [v4.1.8](https://github.com/s1zay/shape-beacon/releases/tag/v4.1.8), and a fresh hosted GET matched the tracked 4.1.8 bundle SHA-256. The original findings remain dated evidence; do not read their `v4.1.0` or uncommitted-doc status as current. This note records read-only verification, not a new release or deployment.
+
 # Public repository and hosted SDK release readiness — 2026-09-29
 
 - **Authority:** `~/shape-beacon` for SDK source, build, distribution, and public documentation; this report records a bounded audit, not a new release.
