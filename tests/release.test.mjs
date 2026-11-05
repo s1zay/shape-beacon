@@ -22,7 +22,7 @@ async function fixture({ dirty = false, manifestSha = artifactSha256, sourceComm
         sourceCommit,
         sourceState: 'clean',
         versions: {
-            engine: '4.1.8',
+            engine: '4.1.9',
             tune: '2.17',
             payloadSchema: 'v3',
             lifecycleSemantics: 'v3'
@@ -70,7 +70,7 @@ test('clean valid repository passes and produces the exact release plan', async 
         assert.equal(plan.sourceCommit, SOURCE_COMMIT);
         assert.equal(plan.artifactCommit, ARTIFACT_COMMIT);
         assert.equal(plan.artifactSha256, artifactSha256);
-        assert.equal(plan.engineVersion, '4.1.8');
+        assert.equal(plan.engineVersion, '4.1.9');
         assert.equal(plan.tuneVersion, '2.17');
         assert.equal(plan.payloadSchema, 'v3');
         assert.equal(plan.lifecycleSemantics, 'v3');

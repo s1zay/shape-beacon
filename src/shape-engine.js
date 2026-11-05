@@ -10,6 +10,7 @@ const MIN_ENGAGED_DURATION_MS = 5000;
 const MIN_ENGAGED_EVENT_COUNT = 20;
 const DOMAIN_SESSION_LIFETIME_MS = 2 * 60 * 60 * 1000;
 const PAGE_SESSION_ANALYTICAL_MAX_MS = 2 * 60 * 60 * 1000;
+const MAX_BEACONS_PER_PAGE_SESSION = 2000;
 
 const isUndeterminedEngagement = (durationMs, eventCount) =>
     durationMs < MIN_ENGAGED_DURATION_MS || eventCount < MIN_ENGAGED_EVENT_COUNT;
@@ -336,6 +337,11 @@ class ShapeEngine {
         if (!this.config.endpoint) return false;
 
         const isMaxAgeFinal = Date.now() - this.pageSessionStart >= PAGE_SESSION_ANALYTICAL_MAX_MS;
+
+        // Preserve one final sequence number for the controlled max-age report.
+        // Ordinary updates stop at 1,999; the final report may use sequence 2,000.
+        if (!isMaxAgeFinal && this.beaconSequence >= MAX_BEACONS_PER_PAGE_SESSION - 1) return false;
+        if (this.beaconSequence >= MAX_BEACONS_PER_PAGE_SESSION) return false;
 
         this.analyze();
 

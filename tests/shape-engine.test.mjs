@@ -566,7 +566,7 @@ test('payload uses lifecycle-v3 field names and required scalar types', () => {
 
     assert.equal(payload.payloadSchema, 'v3');
     assert.equal(payload.lifecycle_semantics_version, 'v3');
-    assert.equal(payload.engineVersion, '4.1.8');
+    assert.equal(payload.engineVersion, '4.1.9');
     assert.equal(payload.tuneVersion, '2.17');
     assert.equal(typeof payload.page_session_id, 'string');
     assert.equal(typeof payload.domain_session_id, 'string');
@@ -679,6 +679,31 @@ test('the controlled Page max-age report is final and rolls Page and Domain iden
     assert.equal(next.beacon_sequence, 1);
     assert.equal(next.page_session_final, false);
     assert.equal(next.page_start_provenance, 'max_age_rollover_started');
+});
+
+test('Page beacon ceiling stops ordinary updates at 1,999 and reserves 2,000 for max age', () => {
+    const environment = createSdkContext({ startTime: 0 });
+    const engine = initEngine(environment);
+    const cappedPage = engine.pageSessionId;
+
+    engine.beaconSequence = 1998;
+    engine.forceSend();
+    assert.equal(environment.sentPayloads.length, 1);
+    assert.equal(environment.sentPayloads[0].body.beacon_sequence, 1999);
+    assert.equal(environment.sentPayloads[0].body.page_session_id, cappedPage);
+
+    assert.equal(engine.forceSend(), false);
+    assert.equal(environment.sentPayloads.length, 1);
+    assert.equal(engine.beaconSequence, 1999);
+
+    environment.clock.now = 7_200_000;
+    engine.forceSend();
+    assert.equal(environment.sentPayloads.length, 2);
+    assert.equal(environment.sentPayloads[1].body.beacon_sequence, 2000);
+    assert.equal(environment.sentPayloads[1].body.page_session_id, cappedPage);
+    assert.equal(environment.sentPayloads[1].body.page_session_final, true);
+    assert.notEqual(engine.pageSessionId, cappedPage);
+    assert.equal(engine.beaconSequence, 0);
 });
 
 test('an autosave at Page max age cannot carry old chunks into the rolled Page', () => {
