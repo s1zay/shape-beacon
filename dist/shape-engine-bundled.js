@@ -1,12 +1,12 @@
 /**
  * GENERATED FILE — DO NOT EDIT DIRECTLY.
  * Regenerate with: npm run build
- * ShapeEngine SDK v4.1.8 (Bundled with Tune v2.17)
+ * ShapeEngine SDK v4.1.9 (Bundled with Tune v2.17)
  * Payload schema v3; lifecycle semantics v3
- * Source commit b039dc804f8ce71a4cd8c22f313b080c1355358b (clean)
+ * Source commit 2067522dfaf840e051fb817fbb00074ac87a829b (clean)
  */
 const SDK_METADATA = Object.freeze({
-    engineVersion: '4.1.8',
+    engineVersion: '4.1.9',
     tuneVersion: '2.17',
     payloadSchema: 'v3',
     lifecycleSemanticsVersion: 'v3'
@@ -169,6 +169,7 @@ const MIN_ENGAGED_DURATION_MS = 5000;
 const MIN_ENGAGED_EVENT_COUNT = 20;
 const DOMAIN_SESSION_LIFETIME_MS = 2 * 60 * 60 * 1000;
 const PAGE_SESSION_ANALYTICAL_MAX_MS = 2 * 60 * 60 * 1000;
+const MAX_BEACONS_PER_PAGE_SESSION = 2000;
 
 const isUndeterminedEngagement = (durationMs, eventCount) =>
     durationMs < MIN_ENGAGED_DURATION_MS || eventCount < MIN_ENGAGED_EVENT_COUNT;
@@ -495,6 +496,11 @@ class ShapeEngine {
         if (!this.config.endpoint) return false;
 
         const isMaxAgeFinal = Date.now() - this.pageSessionStart >= PAGE_SESSION_ANALYTICAL_MAX_MS;
+
+        // Preserve one final sequence number for the controlled max-age report.
+        // Ordinary updates stop at 1,999; the final report may use sequence 2,000.
+        if (!isMaxAgeFinal && this.beaconSequence >= MAX_BEACONS_PER_PAGE_SESSION - 1) return false;
+        if (this.beaconSequence >= MAX_BEACONS_PER_PAGE_SESSION) return false;
 
         this.analyze();
 
