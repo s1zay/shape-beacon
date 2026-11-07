@@ -1,5 +1,5 @@
 export const SDK_METADATA = Object.freeze({
-    engineVersion: '4.1.9',
+    engineVersion: '4.2.0',
     tuneVersion: '2.17',
     payloadSchema: 'v3',
     lifecycleSemanticsVersion: 'v3'

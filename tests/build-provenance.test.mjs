@@ -14,7 +14,7 @@ const manifest = JSON.parse(await readFile(
 
 test('canonical SDK metadata retains the public contract', () => {
     assert.deepEqual(SDK_METADATA, {
-        engineVersion: '4.1.9',
+        engineVersion: '4.2.0',
         tuneVersion: '2.17',
         payloadSchema: 'v3',
         lifecycleSemanticsVersion: 'v3'
@@ -22,7 +22,7 @@ test('canonical SDK metadata retains the public contract', () => {
 });
 
 test('generated artifact derives its public versions from canonical metadata', () => {
-    assert.match(artifactText, /ShapeEngine SDK v4\.1\.9 \(Bundled with Tune v2\.17\)/);
+    assert.match(artifactText, /ShapeEngine SDK v4\.2\.0 \(Bundled with Tune v2\.17\)/);
     assert.match(artifactText, /Payload schema v3; lifecycle semantics v3/);
     assert.match(artifactText, /this\.version = ENGINE_VERSION/);
     assert.match(artifactText, /payloadSchema: PAYLOAD_SCHEMA/);
@@ -33,7 +33,7 @@ test('artifact manifest identifies and hashes the generated bundle', () => {
     assert.equal(manifest.artifact, 'dist/shape-engine-bundled.js');
     assert.equal(manifest.sha256, createHash('sha256').update(artifact).digest('hex'));
     assert.deepEqual(manifest.versions, {
-        engine: '4.1.9',
+        engine: '4.2.0',
         tune: '2.17',
         payloadSchema: 'v3',
         lifecycleSemantics: 'v3'

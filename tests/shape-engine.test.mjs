@@ -122,27 +122,10 @@ function initEngine(environment) {
     return engine;
 }
 
-function summary(eventCount, intensity, shape) {
-    return {
-        eventCount,
-        sessionDurationMs: 1000,
-        device: 'desktop',
-        metrics: { intensity, rhythm: intensity, exploration: intensity, coherence: intensity },
-        shapes: {
-            steady: shape === 'steady' ? 1 : 0,
-            burst: shape === 'burst' ? 1 : 0,
-            drift: 0,
-            chaotic: 0,
-            flat: 0,
-            ambient: 0,
-            undetermined: 0
-        }
-    };
-}
-
-function runFiveChunks(engine, batchLabel) {
+function runFiveChunks(engine) {
     for (let index = 0; index < 5; index++) {
-        engine.collector.events = [{ batchLabel }];
+        const offset = engine.pageAccumulator.eventCount;
+        engine.collector.events = rawEvents(10000).map((ev,i)=>({...ev,ts:(offset+i)*1.2}));
         engine._handleChunkLimit();
     }
 }
@@ -507,15 +490,13 @@ test('50K autosaves keep identity, sequence, cumulative behavior, duration, and 
     const engine = initEngine(environment);
     const pageSessionId = engine.pageSessionId;
     const domainSessionId = engine.domainSessionId;
-    engine._analyzeBuffer = events => events.length === 0
-        ? summary(0, 0, 'steady')
-        : summary(10000, events[0].batchLabel === 'early' ? 0.2 : 0.8, events[0].batchLabel === 'early' ? 'steady' : 'burst');
+
 
     environment.clock.now = 61000;
     runFiveChunks(engine, 'early');
     assert.equal(engine.collector.events.length, 0);
-    assert.equal(engine.chunkHistory.length, 0);
-    assert.equal(engine.cumulativeSummary.eventCount, 50000);
+    assert.equal(Object.values(engine.pageAccumulator).some(Array.isArray), false);
+    assert.equal(engine.pageAccumulator.eventCount, 50000);
 
     environment.clock.now = 121000;
     runFiveChunks(engine, 'late');
@@ -528,20 +509,18 @@ test('50K autosaves keep identity, sequence, cumulative behavior, duration, and 
     assert.deepEqual([first.beacon_sequence, second.beacon_sequence], [1, 2]);
     assert.deepEqual([first.eventCount, second.eventCount], [50000, 100000]);
     assert.deepEqual([first.sessionDurationMs, second.sessionDurationMs], [60000, 120000]);
-    assert.equal(first.metrics.intensity, 0.2);
-    assert.equal(second.metrics.intensity, 0.5);
-    assert.equal(second.shapes.steady, 0.5);
-    assert.equal(second.shapes.burst, 0.5);
+    const oracle = engine._analyzeBuffer(rawEvents(100000).map((ev,i)=>({...ev,ts:i*1.2,x:i%10000,y:i%10000})),120000);
+    assert.deepEqual(JSON.parse(JSON.stringify(second.metrics)),JSON.parse(JSON.stringify(oracle.metrics)));
+    assert.equal(second.shapes.undetermined,0);
     assert.equal(engine.collector.events.length, 0);
-    assert.equal(engine.chunkHistory.length, 0);
-    assert.equal(engine.cumulativeSummary.eventCount, 100000);
+    assert.equal(Object.values(engine.pageAccumulator).some(Array.isArray), false);
+    assert.equal(engine.pageAccumulator.eventCount, 100000);
 });
 
 test('the collector still triggers its autosave after five real 10K raw-event buffers', () => {
     const environment = createSdkContext();
     const engine = initEngine(environment);
     const pageSessionId = engine.pageSessionId;
-    engine._analyzeBuffer = events => summary(events.length, 0.4, 'steady');
 
     for (let index = 0; index < 50000; index++) {
         engine.collector._pushEvent('mouse', { x: index % 10, y: index % 20 });
@@ -554,8 +533,8 @@ test('the collector still triggers its autosave after five real 10K raw-event bu
     assert.equal(engine.pageSessionId, pageSessionId);
     assert.equal(engine.beaconSequence, 1);
     assert.equal(engine.collector.events.length, 0);
-    assert.equal(engine.chunkHistory.length, 0);
-    assert.equal(engine.cumulativeSummary.eventCount, 50000);
+    assert.equal(Object.values(engine.pageAccumulator).some(Array.isArray), false);
+    assert.equal(engine.pageAccumulator.eventCount, 50000);
 });
 
 test('payload uses lifecycle-v3 field names and required scalar types', () => {
@@ -566,7 +545,7 @@ test('payload uses lifecycle-v3 field names and required scalar types', () => {
 
     assert.equal(payload.payloadSchema, 'v3');
     assert.equal(payload.lifecycle_semantics_version, 'v3');
-    assert.equal(payload.engineVersion, '4.1.9');
+    assert.equal(payload.engineVersion, '4.2.0');
     assert.equal(payload.tuneVersion, '2.17');
     assert.equal(typeof payload.page_session_id, 'string');
     assert.equal(typeof payload.domain_session_id, 'string');
@@ -709,15 +688,14 @@ test('Page beacon ceiling stops ordinary updates at 1,999 and reserves 2,000 for
 test('an autosave at Page max age cannot carry old chunks into the rolled Page', () => {
     const environment = createSdkContext({ startTime: 0 });
     const engine = initEngine(environment);
-    engine._analyzeBuffer = events => summary(events.length, 0.4, 'steady');
     environment.clock.now = 7_200_000;
     runFiveChunks(engine, 'final');
 
     assert.equal(environment.sentPayloads.length, 1);
     assert.equal(environment.sentPayloads[0].body.page_session_final, true);
     assert.equal(engine.beaconSequence, 0);
-    assert.equal(engine.cumulativeSummary, null);
-    assert.equal(engine.chunkHistory.length, 0);
+    assert.equal(engine.pageAccumulator.eventCount, 0);
+    assert.equal(Object.values(engine.pageAccumulator).some(Array.isArray), false);
     assert.equal(engine.collector.events.length, 0);
 });
 
@@ -743,4 +721,88 @@ test('opaque URLs do not expose embedded content, queries, or fragments', () => 
 
     assert.equal(environment.sentPayloads[0].body.url, 'data:');
     assert.equal(JSON.stringify(environment.sentPayloads[0].body).includes(privateContent), false);
+});
+
+function plain(value) { return JSON.parse(JSON.stringify(value)); }
+function stream(count) {
+    let ts=0;
+    return Array.from({length:count},(_,i)=>{
+        ts += i%53===0?900:i%7===0?0:2+(i%11);
+        const type=['mouse','touch_move','key','scroll','click'][i%5];
+        return {type,ts,...(type==='key'?{}:type==='scroll'?{y:i%80}:{x:i%200<100?i%100:100-i%100,y:Math.sin(i/13)*30})};
+    });
+}
+
+test('continuous measurements match whole-buffer formulas across boundaries and reporting schedules',()=>{
+    const events=stream(25037);
+    const baseline=createSdkContext(); const reference=initEngine(baseline);
+    const expectedMetrics=reference._calculateMetrics(reference._calculateFoundations(reference._buildTimeline(events)));
+    const expectedShapes=reference._calculateShapes(expectedMetrics);
+    let firstPartition;
+    for(const size of [1,19,1000,9999,10000,25037]){
+        const environment=createSdkContext();const engine=initEngine(environment);
+        environment.clock.now=events.at(-1).ts+10000;
+        for(let offset=0;offset<events.length;offset+=size){
+            engine.collector.events=events.slice(offset,offset+size);
+            engine.analyze(); const first=plain(engine.getResults());
+            engine.analyze();assert.deepEqual(plain(engine.getResults()),first);
+            engine._handleChunkLimit();
+        }
+        engine.analyze();const result=engine.getResults();
+        assert.equal(result.eventCount,events.length);
+        const measurements=plain({metrics:result.metrics,shapes:result.shapes,device:result.device});
+        if(firstPartition)assert.deepEqual(measurements,firstPartition);else firstPartition=measurements;
+        for(const key of Object.keys(expectedMetrics))assert.ok(Math.abs(result.metrics[key]-expectedMetrics[key])<=0.0001,`${size}: ${key}`);
+        for(const key of Object.keys(expectedShapes))assert.ok(Math.abs(result.shapes[key]-expectedShapes[key])<=0.0001,`${size}: ${key}`);
+        assert.equal(result.shapes.undetermined,0);
+        const sum=Object.entries(result.shapes).filter(([k])=>k!=='undetermined').reduce((n,[,v])=>n+v,0);
+        assert.ok(Math.abs(sum-1)<=0.0003000001);
+    }
+});
+
+test('short tail and rapid chunks do not dilute metrics; eligibility belongs to the Page',()=>{
+    const environment=createSdkContext();const engine=initEngine(environment);
+    const events=stream(10019);
+    engine.collector.events=events.slice(0,10000);engine._handleChunkLimit();
+    engine.collector.events=events.slice(10000);environment.clock.now=90000;
+    engine.analyze();
+    const expected=engine._analyzeBuffer(events,89000);
+    assert.deepEqual(plain(engine.getResults().metrics),plain(expected.metrics));
+    assert.deepEqual(plain(engine.getResults().shapes),plain(expected.shapes));
+    const rapid=createSdkContext();const r=initEngine(rapid);
+    r.collector.events=rawEvents(20);r._handleChunkLimit();
+    r.analyze();assert.equal(r.getResults().shapes.undetermined,1);
+    rapid.clock.now=6000;r.analyze();assert.equal(r.getResults().shapes.undetermined,0);
+});
+
+test('fixed accumulator and unchanged payload whitelist retain no raw completed chunks',()=>{
+    const environment=createSdkContext();const engine=initEngine(environment);
+    const keys=Object.keys(engine.pageAccumulator).sort();
+    environment.clock.now=100000;
+    for(let chunk=0;chunk<12;chunk++){
+        engine.collector.events=stream(10000).map(e=>({...e,ts:e.ts+chunk*100000}));
+        engine.analyze();engine._handleChunkLimit();
+        assert.equal(engine.collector.events.length,0);
+        assert.equal(engine.getResults().events.length,0);
+        assert.deepEqual(Object.keys(engine.pageAccumulator).sort(),keys);
+        assert.ok(Object.values(engine.pageAccumulator).every(v=>v===null||['number','boolean','string'].includes(typeof v)));
+    }
+    engine.forceSend();const payload=environment.sentPayloads.at(-1).body;
+    assert.equal(payload.eventCount,120000);
+    assert.deepEqual(Object.keys(payload).sort(),['payloadSchema','lifecycle_semantics_version','page_session_id','domain_session_id','page_session_started_at','domain_session_started_at','beacon_sequence','page_session_final','page_session_end_reason','page_start_provenance','projectId','apiKey','url','timestamp','engineVersion','tuneVersion','eventCount','sessionDurationMs','device','metrics','shapes'].sort());
+    assert.equal('events' in payload,false);assert.equal('foundations' in payload,false);
+});
+
+test('batch parity covers equal timestamps, nonspatial input, pauses and random paths',()=>{
+    const engine=initEngine(createSdkContext());
+    let seed=12345;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+    for(let trial=0;trial<40;trial++){
+        let ts=0;const events=Array.from({length:20+trial*29},(_,i)=>{
+            ts+=trial===0?0:random()<0.3?0:random()*1000;
+            return trial%3===0?{type:i%2?'key':'scroll',ts}:{type:i%3?'mouse':'touch_move',ts,x:random()*1000,y:random()*1000};
+        });
+        const expected=engine._calculateMetrics(engine._calculateFoundations(engine._buildTimeline(events)));
+        const actual=engine._analyzeBuffer(events,60000).metrics;
+        for(const key of Object.keys(expected))assert.ok(Math.abs(actual[key]-expected[key])<=0.0001,`${trial} ${key}`);
+    }
 });

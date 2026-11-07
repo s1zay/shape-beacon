@@ -4,6 +4,7 @@ import {
     PAYLOAD_SCHEMA
 } from './version.js';
 import { DEFAULT_TUNE } from './tune.js';
+import { PageAccumulator } from './page-accumulator.js';
 import { EventCollector } from './event-collector.js';
 
 const MIN_ENGAGED_DURATION_MS = 5000;
@@ -22,14 +23,13 @@ class ShapeEngine {
         this.collector = new EventCollector(() => this._handleChunkLimit());
 
         this.pageSessionStart = Date.now();
-        this.chunkStart = this.pageSessionStart;
         this.pageSessionId = this._generateId();
         this.domainSessionId = null;
         this.domainSessionStart = null;
         this.pageStartProvenance = 'initial_document';
         this.beaconSequence = 0;
-        this.cumulativeSummary = null;
-        this.chunkHistory = [];
+        this.pageAccumulator = new PageAccumulator();
+        this.completedChunks = 0;
 
         this.config = { endpoint: null, projectId: 'default', apiKey: null };
         this._hasSetupTriggers = false;
@@ -93,15 +93,14 @@ class ShapeEngine {
     _rolloverPageSession() {
         this.collector.reset();
         this.pageSessionStart = Date.now();
-        this.chunkStart = this.pageSessionStart;
         this.pageSessionId = this._generateId();
         const domainSession = this._getOrCreateDomainSession();
         this.domainSessionId = domainSession.id;
         this.domainSessionStart = domainSession.startedAt;
         this.pageStartProvenance = 'max_age_rollover_started';
         this.beaconSequence = 0;
-        this.cumulativeSummary = null;
-        this.chunkHistory = [];
+        this.pageAccumulator = new PageAccumulator();
+        this.completedChunks = 0;
         this._hasSent = false;
         this.state.results = { timeline: [], foundations: {}, metrics: {}, shapes: {}, device: 'unknown' };
         this._schedulePageMaxAge();
@@ -163,155 +162,41 @@ class ShapeEngine {
     }
 
     _handleChunkLimit() {
-        const rawEvents = this.collector.getRawEvents();
-        const duration = Date.now() - this.chunkStart;
-
-        // Analyze the 10k chunk and store the math
-        const chunkData = this._analyzeBuffer(rawEvents, duration);
-        this.chunkHistory.push(chunkData);
-
-        // Clear RAM instantly without O(N) array shifting
+        this.pageAccumulator.add(this.collector.getRawEvents());
         this.collector.reset();
-        this.chunkStart = Date.now();
+        // Release the local demo snapshot too; no old raw chunk survives a flush.
+        if (this.state.results.events) this.state.results.events = [];
+        this.completedChunks++;
+        if (this.completedChunks % 5 === 0) this.forceSend();
+    }
 
-        // 50k Auto-Save Protocol (5 Chunks)
-        if (this.chunkHistory.length >= 5) {
-            // Because of Tab-Switch logic, we bypass the _hasSent lock for this auto-save
-            const rolledOver = this.forceSend();
-            if (rolledOver) return;
-
-            // Collapse completed chunks into one weighted summary. This keeps
-            // memory bounded without changing the logical Page Session.
-            this.cumulativeSummary = this._mergeSummaries([
-                this.cumulativeSummary,
-                ...this.chunkHistory
-            ]);
-            this.chunkHistory = [];
-        }
+    _summarize(accumulator, durationMs) {
+        const undetermined = isUndeterminedEngagement(durationMs, accumulator.eventCount);
+        const metrics = undetermined
+            ? { intensity: 0, rhythm: 0, exploration: 0, coherence: 0 }
+            : this._calculateMetrics(accumulator.foundations(value => this._clamp(value)));
+        return {
+            eventCount: accumulator.eventCount, sessionDurationMs: durationMs,
+            device: accumulator.device, metrics,
+            shapes: undetermined
+                ? { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 1 }
+                : this._calculateShapes(metrics)
+        };
     }
 
     _analyzeBuffer(rawEvents, durationMs) {
-        let hasTouch = false, mouseCount = 0, clickCount = 0;
-
-        for (let i = 0; i < rawEvents.length; i++) {
-            const t = rawEvents[i].type;
-            if (t === 'touch_start' || t === 'touch_move') hasTouch = true;
-            else if (t === 'mouse') mouseCount++;
-            else if (t === 'click') clickCount++;
-        }
-
-        let device = 'unknown';
-        if (hasTouch) {
-            device = (mouseCount > clickCount) ? 'hybrid' : 'mobile';
-        } else if (mouseCount > 0 || clickCount > 0) {
-            device = 'desktop';
-        }
-
-        // Gatekeeper
-        if (isUndeterminedEngagement(durationMs, rawEvents.length)) {
-            return {
-                eventCount: rawEvents.length,
-                sessionDurationMs: durationMs,
-                device: device,
-                metrics: { intensity: 0, rhythm: 0, exploration: 0, coherence: 0 },
-                shapes: { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 1 }
-            };
-        }
-
-        const timeline = this._buildTimeline(rawEvents);
-        const foundations = this._calculateFoundations(timeline);
-        const metrics = this._calculateMetrics(foundations);
-        const shapes = this._calculateShapes(metrics);
-
-        return {
-            eventCount: rawEvents.length,
-            sessionDurationMs: durationMs,
-            device: device,
-            metrics: metrics,
-            shapes: shapes
-        };
-    }
-
-    _mergeSummaries(summaries) {
-        const allChunks = summaries.filter(c => c && c.eventCount > 0);
-        if (allChunks.length === 0) {
-            return {
-                eventCount: 0,
-                sessionDurationMs: 0,
-                device: 'unknown',
-                metrics: { intensity: 0, rhythm: 0, exploration: 0, coherence: 0 },
-                shapes: { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 0 }
-            };
-        }
-
-        let totalEvents = 0;
-        let totalDuration = 0;
-        const mergedMetrics = { intensity: 0, rhythm: 0, exploration: 0, coherence: 0 };
-        const mergedShapes = { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 0 };
-        const deviceSet = new Set();
-
-        // Calculate Sums for Weighted Averages
-        for (const chunk of allChunks) {
-            totalEvents += chunk.eventCount;
-            totalDuration += chunk.sessionDurationMs;
-            deviceSet.add(chunk.device);
-
-            for (const m in mergedMetrics) mergedMetrics[m] += (chunk.metrics[m] || 0) * chunk.eventCount;
-            for (const s in mergedShapes) mergedShapes[s] += (chunk.shapes[s] || 0) * chunk.eventCount;
-        }
-
-        // Divide by Total Events to get Final Averages
-        if (totalEvents > 0) {
-            for (const m in mergedMetrics) mergedMetrics[m] = this._clamp(mergedMetrics[m] / totalEvents);
-            for (const s in mergedShapes) mergedShapes[s] = this._clamp(mergedShapes[s] / totalEvents);
-        }
-
-        let finalDevice = 'unknown';
-        if (deviceSet.has('hybrid') || (deviceSet.has('mobile') && deviceSet.has('desktop'))) finalDevice = 'hybrid';
-        else if (deviceSet.has('mobile')) finalDevice = 'mobile';
-        else if (deviceSet.has('desktop')) finalDevice = 'desktop';
-
-        return {
-            eventCount: totalEvents,
-            sessionDurationMs: totalDuration,
-            device: finalDevice,
-            metrics: mergedMetrics,
-            shapes: mergedShapes
-        };
-    }
-
-    _mergeChunks(currentData) {
-        return this._mergeSummaries([
-            this.cumulativeSummary,
-            ...this.chunkHistory,
-            currentData
-        ]);
+        return this._summarize(new PageAccumulator().add(this._buildTimeline(rawEvents)), durationMs);
     }
 
     analyze() {
         const rawEvents = this.collector.getRawEvents();
-        const duration = Date.now() - this.chunkStart;
-
-        // Analyze final active buffer
-        const currentData = this._analyzeBuffer(rawEvents, duration);
-
-        // Combine all chunks into single footprint
-        const merged = this._mergeChunks(currentData);
-
-        const sessionDurationMs = Date.now() - this.pageSessionStart;
-        const shapes = isUndeterminedEngagement(sessionDurationMs, merged.eventCount)
-            ? { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 1 }
-            : merged.shapes;
-
+        // Reporting is a snapshot: never commit the active buffer twice.
+        const snapshot = this.pageAccumulator.clone().add(rawEvents);
+        const summary = this._summarize(snapshot, Date.now() - this.pageSessionStart);
         this.state.results = {
-            engineVersion: this.version,
-            tuneVersion: this.tune.version,
-            eventCount: merged.eventCount,
-            sessionDurationMs,
-            device: merged.device,
-            metrics: merged.metrics,
-            shapes,
-            events: [...rawEvents] // Attached for local Demo UI compatibility only
+            engineVersion: this.version, tuneVersion: this.tune.version,
+            ...summary,
+            events: [...rawEvents] // Existing local demo API; stripped before transmission.
         };
     }
 

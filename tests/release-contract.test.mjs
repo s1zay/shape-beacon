@@ -134,7 +134,7 @@ test('redacted production fixtures contain no credential-bearing fields or unred
 test('readback verifier classifies exact, stale, unknown, mismatched, and oversized bodies', async () => {
     const body = await readFile(join(root, 'dist/shape-engine-bundled.js'));
     const expected = {
-        artifactSha256: sha256(body), engineVersion: '4.1.9', tuneVersion: '2.17',
+        artifactSha256: sha256(body), engineVersion: '4.2.0', tuneVersion: '2.17',
         payloadSchema: 'v3', lifecycleSemantics: 'v3'
     };
     const verified = verifyReadback({ status: 200, body, expected });
@@ -170,7 +170,7 @@ function validEvidence() {
         workerName: 'shape-beacon',
         rollupVersion: '4.63.3',
         wranglerVersion: WRANGLER_VERSION,
-        engineVersion: '4.1.9', tuneVersion: '2.17', payloadSchema: 'v3', lifecycleSemantics: 'v3',
+        engineVersion: '4.2.0', tuneVersion: '2.17', payloadSchema: 'v3', lifecycleSemantics: 'v3',
         deploymentStartedAt: '2026-09-15T20:00:00.000Z',
         deploymentCompletedAt: '2026-09-15T20:01:00.000Z',
         deployCommand: ['npx', '--no-install', 'wrangler', 'deploy', '--config', 'wrangler.jsonc'],
@@ -185,7 +185,7 @@ function validEvidence() {
 
 const evidenceExpected = {
     sourceCommit: '1'.repeat(40), artifactCommit: '2'.repeat(40), artifactSha256: 'a'.repeat(64),
-    engineVersion: '4.1.9', tuneVersion: '2.17', payloadSchema: 'v3', lifecycleSemantics: 'v3'
+    engineVersion: '4.2.0', tuneVersion: '2.17', payloadSchema: 'v3', lifecycleSemantics: 'v3'
 };
 
 test('evidence schema accepts valid evidence and rejects invalid cross-field combinations', () => {
