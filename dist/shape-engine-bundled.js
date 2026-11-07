@@ -1,12 +1,12 @@
 /**
  * GENERATED FILE — DO NOT EDIT DIRECTLY.
  * Regenerate with: npm run build
- * ShapeEngine SDK v4.1.9 (Bundled with Tune v2.17)
+ * ShapeEngine SDK v4.2.0 (Bundled with Tune v2.17)
  * Payload schema v3; lifecycle semantics v3
- * Source commit 2067522dfaf840e051fb817fbb00074ac87a829b (clean)
+ * Source commit 8c96bccdba4dbea4de339bb8fef43304581499f7 (clean)
  */
 const SDK_METADATA = Object.freeze({
-    engineVersion: '4.1.9',
+    engineVersion: '4.2.0',
     tuneVersion: '2.17',
     payloadSchema: 'v3',
     lifecycleSemanticsVersion: 'v3'
@@ -78,6 +78,85 @@ const DEFAULT_TUNE = {
     "ambient": [0.5, 0.5, 0.5, 0.5]
   }
 };
+
+// Local, fixed-size sufficient statistics. No raw event arrays or network fields.
+// Welford updates retain variance without retaining intervals or velocities.
+class PageAccumulator {
+    constructor() {
+        Object.assign(this, { eventCount: 0, touch: false, mouse: 0, clicks: 0,
+            firstTs: 0, lastTs: 0, lastType: null, idle: 0, switches: 0,
+            intervals: 0, intervalMean: 0, intervalM2: 0,
+            velocities: 0, velocityMean: 0, velocityM2: 0,
+            spatial: 0, firstX: null, firstY: null, lastX: null, lastY: null,
+            distance: 0, angle: null, inflections: 0 });
+    }
+    clone() { return Object.assign(new PageAccumulator(), this); }
+    add(events) {
+        for (const ev of events) {
+            if (ev.type === 'touch_start' || ev.type === 'touch_move') this.touch = true;
+            else if (ev.type === 'mouse') this.mouse++;
+            else if (ev.type === 'click') this.clicks++;
+            if (this.eventCount === 0) this.firstTs = ev.ts;
+            else {
+                const dt = ev.ts - this.lastTs;
+                if (dt > 0) {
+                    this.intervals++;
+                    const delta = dt - this.intervalMean;
+                    this.intervalMean += delta / this.intervals;
+                    this.intervalM2 += delta * (dt - this.intervalMean);
+                }
+                if (dt > 500) this.idle += dt;
+                if (ev.type !== this.lastType) this.switches++;
+                // Preserve the existing batch analyzer's spatial convention: its
+                // loop begins at event index 1. Do not change the tune here.
+                if (ev.x != null && ev.y != null) {
+                    this.spatial++;
+                    if (this.firstX === null) { this.firstX = ev.x; this.firstY = ev.y; }
+                    if (this.lastX !== null) {
+                        const dx = ev.x - this.lastX, dy = ev.y - this.lastY;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        this.distance += distance;
+                        if (dt > 0) {
+                            const velocity = distance / dt;
+                            this.velocities++;
+                            const delta = velocity - this.velocityMean;
+                            this.velocityMean += delta / this.velocities;
+                            this.velocityM2 += delta * (velocity - this.velocityMean);
+                        }
+                        const angle = Math.atan2(dy, dx);
+                        if (this.angle !== null) {
+                            let difference = Math.abs(angle - this.angle);
+                            if (difference > Math.PI) difference = 2 * Math.PI - difference;
+                            if (difference > Math.PI / 4) this.inflections++;
+                        }
+                        this.angle = angle;
+                    }
+                    this.lastX = ev.x; this.lastY = ev.y;
+                }
+            }
+            this.eventCount++; this.lastTs = ev.ts; this.lastType = ev.type;
+        }
+        return this;
+    }
+    get device() {
+        return this.touch ? (this.mouse > this.clicks ? 'hybrid' : 'mobile')
+            : this.mouse || this.clicks ? 'desktop' : 'unknown';
+    }
+    foundations(clamp) {
+        const f = { actionDensity: 0, burstVariance: 0, idleFraction: 0, pathEfficiency: 0,
+            velocityVolatility: 0, directionalInflection: 0, modalitySwitching: 0 };
+        const duration = this.lastTs - this.firstTs;
+        if (this.eventCount < 2 || duration === 0) return f;
+        f.actionDensity = clamp(this.eventCount / (duration / 1000) / 20);
+        if (this.intervals) f.burstVariance = clamp(Math.sqrt(Math.max(0, this.intervalM2 / this.intervals)) / 500);
+        f.idleFraction = clamp(this.idle / duration);
+        if (this.distance > 0) f.pathEfficiency = clamp(Math.hypot(this.lastX - this.firstX, this.lastY - this.firstY) / this.distance);
+        if (this.velocities) f.velocityVolatility = clamp(Math.sqrt(Math.max(0, this.velocityM2 / this.velocities)) / 5);
+        if (this.spatial > 2) f.directionalInflection = clamp(this.inflections / this.spatial);
+        f.modalitySwitching = clamp(this.switches / this.eventCount);
+        return f;
+    }
+}
 
 class EventCollector {
     constructor(onLimitReached) {
@@ -181,14 +260,13 @@ class ShapeEngine {
         this.collector = new EventCollector(() => this._handleChunkLimit());
 
         this.pageSessionStart = Date.now();
-        this.chunkStart = this.pageSessionStart;
         this.pageSessionId = this._generateId();
         this.domainSessionId = null;
         this.domainSessionStart = null;
         this.pageStartProvenance = 'initial_document';
         this.beaconSequence = 0;
-        this.cumulativeSummary = null;
-        this.chunkHistory = [];
+        this.pageAccumulator = new PageAccumulator();
+        this.completedChunks = 0;
 
         this.config = { endpoint: null, projectId: 'default', apiKey: null };
         this._hasSetupTriggers = false;
@@ -252,15 +330,14 @@ class ShapeEngine {
     _rolloverPageSession() {
         this.collector.reset();
         this.pageSessionStart = Date.now();
-        this.chunkStart = this.pageSessionStart;
         this.pageSessionId = this._generateId();
         const domainSession = this._getOrCreateDomainSession();
         this.domainSessionId = domainSession.id;
         this.domainSessionStart = domainSession.startedAt;
         this.pageStartProvenance = 'max_age_rollover_started';
         this.beaconSequence = 0;
-        this.cumulativeSummary = null;
-        this.chunkHistory = [];
+        this.pageAccumulator = new PageAccumulator();
+        this.completedChunks = 0;
         this._hasSent = false;
         this.state.results = { timeline: [], foundations: {}, metrics: {}, shapes: {}, device: 'unknown' };
         this._schedulePageMaxAge();
@@ -322,155 +399,41 @@ class ShapeEngine {
     }
 
     _handleChunkLimit() {
-        const rawEvents = this.collector.getRawEvents();
-        const duration = Date.now() - this.chunkStart;
-
-        // Analyze the 10k chunk and store the math
-        const chunkData = this._analyzeBuffer(rawEvents, duration);
-        this.chunkHistory.push(chunkData);
-
-        // Clear RAM instantly without O(N) array shifting
+        this.pageAccumulator.add(this.collector.getRawEvents());
         this.collector.reset();
-        this.chunkStart = Date.now();
+        // Release the local demo snapshot too; no old raw chunk survives a flush.
+        if (this.state.results.events) this.state.results.events = [];
+        this.completedChunks++;
+        if (this.completedChunks % 5 === 0) this.forceSend();
+    }
 
-        // 50k Auto-Save Protocol (5 Chunks)
-        if (this.chunkHistory.length >= 5) {
-            // Because of Tab-Switch logic, we bypass the _hasSent lock for this auto-save
-            const rolledOver = this.forceSend();
-            if (rolledOver) return;
-
-            // Collapse completed chunks into one weighted summary. This keeps
-            // memory bounded without changing the logical Page Session.
-            this.cumulativeSummary = this._mergeSummaries([
-                this.cumulativeSummary,
-                ...this.chunkHistory
-            ]);
-            this.chunkHistory = [];
-        }
+    _summarize(accumulator, durationMs) {
+        const undetermined = isUndeterminedEngagement(durationMs, accumulator.eventCount);
+        const metrics = undetermined
+            ? { intensity: 0, rhythm: 0, exploration: 0, coherence: 0 }
+            : this._calculateMetrics(accumulator.foundations(value => this._clamp(value)));
+        return {
+            eventCount: accumulator.eventCount, sessionDurationMs: durationMs,
+            device: accumulator.device, metrics,
+            shapes: undetermined
+                ? { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 1 }
+                : this._calculateShapes(metrics)
+        };
     }
 
     _analyzeBuffer(rawEvents, durationMs) {
-        let hasTouch = false, mouseCount = 0, clickCount = 0;
-
-        for (let i = 0; i < rawEvents.length; i++) {
-            const t = rawEvents[i].type;
-            if (t === 'touch_start' || t === 'touch_move') hasTouch = true;
-            else if (t === 'mouse') mouseCount++;
-            else if (t === 'click') clickCount++;
-        }
-
-        let device = 'unknown';
-        if (hasTouch) {
-            device = (mouseCount > clickCount) ? 'hybrid' : 'mobile';
-        } else if (mouseCount > 0 || clickCount > 0) {
-            device = 'desktop';
-        }
-
-        // Gatekeeper
-        if (isUndeterminedEngagement(durationMs, rawEvents.length)) {
-            return {
-                eventCount: rawEvents.length,
-                sessionDurationMs: durationMs,
-                device: device,
-                metrics: { intensity: 0, rhythm: 0, exploration: 0, coherence: 0 },
-                shapes: { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 1 }
-            };
-        }
-
-        const timeline = this._buildTimeline(rawEvents);
-        const foundations = this._calculateFoundations(timeline);
-        const metrics = this._calculateMetrics(foundations);
-        const shapes = this._calculateShapes(metrics);
-
-        return {
-            eventCount: rawEvents.length,
-            sessionDurationMs: durationMs,
-            device: device,
-            metrics: metrics,
-            shapes: shapes
-        };
-    }
-
-    _mergeSummaries(summaries) {
-        const allChunks = summaries.filter(c => c && c.eventCount > 0);
-        if (allChunks.length === 0) {
-            return {
-                eventCount: 0,
-                sessionDurationMs: 0,
-                device: 'unknown',
-                metrics: { intensity: 0, rhythm: 0, exploration: 0, coherence: 0 },
-                shapes: { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 0 }
-            };
-        }
-
-        let totalEvents = 0;
-        let totalDuration = 0;
-        const mergedMetrics = { intensity: 0, rhythm: 0, exploration: 0, coherence: 0 };
-        const mergedShapes = { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 0 };
-        const deviceSet = new Set();
-
-        // Calculate Sums for Weighted Averages
-        for (const chunk of allChunks) {
-            totalEvents += chunk.eventCount;
-            totalDuration += chunk.sessionDurationMs;
-            deviceSet.add(chunk.device);
-
-            for (const m in mergedMetrics) mergedMetrics[m] += (chunk.metrics[m] || 0) * chunk.eventCount;
-            for (const s in mergedShapes) mergedShapes[s] += (chunk.shapes[s] || 0) * chunk.eventCount;
-        }
-
-        // Divide by Total Events to get Final Averages
-        if (totalEvents > 0) {
-            for (const m in mergedMetrics) mergedMetrics[m] = this._clamp(mergedMetrics[m] / totalEvents);
-            for (const s in mergedShapes) mergedShapes[s] = this._clamp(mergedShapes[s] / totalEvents);
-        }
-
-        let finalDevice = 'unknown';
-        if (deviceSet.has('hybrid') || (deviceSet.has('mobile') && deviceSet.has('desktop'))) finalDevice = 'hybrid';
-        else if (deviceSet.has('mobile')) finalDevice = 'mobile';
-        else if (deviceSet.has('desktop')) finalDevice = 'desktop';
-
-        return {
-            eventCount: totalEvents,
-            sessionDurationMs: totalDuration,
-            device: finalDevice,
-            metrics: mergedMetrics,
-            shapes: mergedShapes
-        };
-    }
-
-    _mergeChunks(currentData) {
-        return this._mergeSummaries([
-            this.cumulativeSummary,
-            ...this.chunkHistory,
-            currentData
-        ]);
+        return this._summarize(new PageAccumulator().add(this._buildTimeline(rawEvents)), durationMs);
     }
 
     analyze() {
         const rawEvents = this.collector.getRawEvents();
-        const duration = Date.now() - this.chunkStart;
-
-        // Analyze final active buffer
-        const currentData = this._analyzeBuffer(rawEvents, duration);
-
-        // Combine all chunks into single footprint
-        const merged = this._mergeChunks(currentData);
-
-        const sessionDurationMs = Date.now() - this.pageSessionStart;
-        const shapes = isUndeterminedEngagement(sessionDurationMs, merged.eventCount)
-            ? { steady: 0, burst: 0, drift: 0, chaotic: 0, flat: 0, ambient: 0, undetermined: 1 }
-            : merged.shapes;
-
+        // Reporting is a snapshot: never commit the active buffer twice.
+        const snapshot = this.pageAccumulator.clone().add(rawEvents);
+        const summary = this._summarize(snapshot, Date.now() - this.pageSessionStart);
         this.state.results = {
-            engineVersion: this.version,
-            tuneVersion: this.tune.version,
-            eventCount: merged.eventCount,
-            sessionDurationMs,
-            device: merged.device,
-            metrics: merged.metrics,
-            shapes,
-            events: [...rawEvents] // Attached for local Demo UI compatibility only
+            engineVersion: this.version, tuneVersion: this.tune.version,
+            ...summary,
+            events: [...rawEvents] // Existing local demo API; stripped before transmission.
         };
     }
 

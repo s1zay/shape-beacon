@@ -1,10 +1,10 @@
 {
   "artifact": "dist/shape-engine-bundled.js",
-  "sha256": "b50c6356a000bdf4d2eb29eb18f79a2e5b68c703431e0c4891779e0ec2850c95",
-  "sourceCommit": "2067522dfaf840e051fb817fbb00074ac87a829b",
+  "sha256": "999b93a84f35d214de6f1b7be97d0c94e7870ae9ed1f748c59307eb3c06bae08",
+  "sourceCommit": "8c96bccdba4dbea4de339bb8fef43304581499f7",
   "sourceState": "clean",
   "versions": {
-    "engine": "4.1.9",
+    "engine": "4.2.0",
     "tune": "2.17",
     "payloadSchema": "v3",
     "lifecycleSemantics": "v3"
