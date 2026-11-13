@@ -79,7 +79,7 @@ The script URL serves the SDK; `endpoint` receives its summary reports. `project
 
 A **Page Session** describes one document lifecycle. A **Cross-Page / Domain Session** connects qualifying Page Sessions across same-tab navigation and is available as paid functionality according to plan entitlement. See the dashboard and current plan details for availability and pricing.
 
-**Historical Analytics is a separate aggregate-only view.** Its availability and represented dates depend on the domain’s data and entitlement. Production authority for customer Historical reads is still being verified, so do not assume complete long-term coverage or infer reconstructed sessions and journeys from Historical aggregates.
+**Historical Analytics is a separate aggregate-only view.** Its availability and represented dates depend on the domain’s data and entitlement. Older dates may predate expanded Historical facts and therefore expose fewer dimensions. Historical aggregates do not reconstruct individual sessions or journeys.
 
 Account sign-in, domain verification, collection authorization, hosting-provider connection, plan entitlement, and Reader access are separate capabilities. A browser API key authorizes scoped collection; it does not authenticate an account or grant analytics read access. Use the dashboard-generated installation snippet and rely on the capabilities shown for the selected domain and plan.
 
